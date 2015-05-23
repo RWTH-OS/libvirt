@@ -774,6 +774,15 @@ OPENVZ_DRIVER_SOURCES =						\
 		openvz/openvz_driver.c openvz/openvz_driver.h   \
 		openvz/openvz_util.c openvz/openvz_util.h
 
+LXCTOOLS_DRIVER_SOURCES =					\
+		lxctools/lxctools_conf.c 			\
+		lxctools/lxctools_conf.h			\
+		lxctools/lxctools_driver.c 			\
+		lxctools/lxctools_driver.h   			\
+		lxctools/lxctoools_util.c 			\
+		lxctools/lxctools_util.h		
+
+
 VMWARE_DRIVER_SOURCES =						\
 		vmware/vmware_driver.c vmware/vmware_driver.h	\
 		vmware/vmware_conf.c vmware/vmware_conf.h
