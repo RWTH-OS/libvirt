@@ -626,6 +626,7 @@ DRIVER_SOURCE_FILES = \
 	$(NWFILTER_DRIVER_SOURCES) \
 	$(OPENVZ_DRIVER_SOURCES) \
 	$(VZ_DRIVER_SOURCES) \
+	$(LXCTOOLS_DRIVER_SOURCES) \
 	$(PHYP_DRIVER_SOURCES) \
 	$(QEMU_DRIVER_SOURCES) \
 	$(REMOTE_DRIVER_SOURCES) \
@@ -774,14 +775,22 @@ OPENVZ_DRIVER_SOURCES =						\
 		openvz/openvz_driver.c openvz/openvz_driver.h   \
 		openvz/openvz_util.c openvz/openvz_util.h
 
-LXCTOOLS_DRIVER_SOURCES =					\
-		lxctools/lxctools_conf.c 			\
+LXCTOOLS_DRIVER_SOURCES = lxctools/lxctools_driver.h lxctools/lxctools_driver.c \
+		lxctools/lxctools_conf.c			\
 		lxctools/lxctools_conf.h			\
-		lxctools/lxctools_driver.c 			\
-		lxctools/lxctools_driver.h   			\
-		lxctools/lxctoools_util.c 			\
-		lxctools/lxctools_util.h		
-
+		lxctools/lxctools_driver.c			\
+		lxctools/lxctools_driver.h			\
+		lxctools/lxctools_util.c			\
+		lxctools/lxctools_util.h			\
+		lxctools/lxctools_conffile.c		\
+		lxctools/lxctools_conffile.h		\
+		lxctools/lxctools_filecpy_client.c	\
+		lxctools/lxctools_filecpy_client.h	\
+		lxctools/lxctools_filecpy_server.c  \
+		lxctools/lxctools_filecpy_server.h	\
+		lxctools/lxctools_migration.c		\
+		lxctools/lxctools_migration.h		\
+		lxctools/lxctools_filecpy_types.h
 
 VMWARE_DRIVER_SOURCES =						\
 		vmware/vmware_driver.c vmware/vmware_driver.h	\
@@ -1268,6 +1277,14 @@ libvirt_driver_openvz_la_CFLAGS = \
 		-I$(srcdir)/conf $(AM_CFLAGS)
 libvirt_driver_openvz_la_SOURCES = $(OPENVZ_DRIVER_SOURCES)
 endif WITH_OPENVZ
+
+if WITH_LXCTOOLS
+noinst_LTLIBRARIES += libvirt_driver_lxctools.la
+libvirt_la_BUILT_LIBADD += libvirt_driver_lxctools.la
+libvirt_driver_lxctools_la_CFLAGS = \
+		-I$(srcdir)/conf -llxc $(AM_CFLAGS)
+libvirt_driver_lxctools_la_SOURCES = $(LXCTOOLS_DRIVER_SOURCES)
+endif WITH_LXCTOOLS
 
 if WITH_VMWARE
 noinst_LTLIBRARIES += libvirt_driver_vmware.la
@@ -1887,6 +1904,7 @@ EXTRA_DIST +=							\
 		$(LXC_DRIVER_SOURCES)				\
 		$(UML_DRIVER_SOURCES)				\
 		$(OPENVZ_DRIVER_SOURCES)			\
+		$(LXCTOOLS_DRIVER_SOURCES)			\
 		$(PHYP_DRIVER_SOURCES)				\
 		$(VBOX_DRIVER_SOURCES)				\
 		$(XENAPI_DRIVER_SOURCES)			\
