@@ -77,6 +77,9 @@
 #ifdef WITH_OPENVZ
 # include "openvz/openvz_driver.h"
 #endif
+#ifdef WITH_LXCTOOLS
+# include "lxctools/lxctools_driver.h"
+#endif
 #ifdef WITH_VMWARE
 # include "vmware/vmware_driver.h"
 #endif
@@ -409,6 +412,10 @@ virGlobalInit(void)
 # ifdef WITH_OPENVZ
     if (openvzRegister() == -1)
         goto error;
+# endif
+# ifdef WITH_LXCTOOLS
+    if (lxctoolsRegister() == -1)
+	goto error;
 # endif
 # ifdef WITH_VMWARE
     if (vmwareRegister() == -1)

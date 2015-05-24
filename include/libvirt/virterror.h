@@ -132,6 +132,7 @@ typedef enum {
 
     VIR_FROM_PERF = 65,         /* Error from perf */
 
+    VIR_FROM_LXCTOOLS = 66,     /* Error from lxctools driver */
 # ifdef VIR_ENUM_SENTINELS
     VIR_ERR_DOMAIN_LAST
 # endif
