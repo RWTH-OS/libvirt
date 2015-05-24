@@ -28,20 +28,9 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-#include <sys/poll.h>
-#include <limits.h>
-#include <string.h>
 #include <stdio.h>
-#include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <paths.h>
-#include <pwd.h>
-#include <sys/wait.h>
 #include <lxc/lxccontainer.h>
 
 #include "virerror.h"
@@ -65,8 +54,48 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
 
 #define LXCTOOLS_NB_MEM_PARAM 3
 
+static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
+					  virConnectAuthPtr auth ATTRIBUTE_UNUSED,
+					  unsigned int flags)
+{
+    struct lxc_container *driver;
+
+    virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
+
+    if(conn->uri == NULL) {
+       if(!(conn->uri = virURIParse("lxctools:///")))
+          return VIR_DRV_OPEN_ERROR;
+    } else {
+       /* Is schme for 'lxctools'? */
+       if(conn->uri->scheme == NULL ||
+          STRNEQ(conn->uri->scheme, "lxctools"))
+          return VIR_DRV_OPEN_DECLINED;
+
+       /* Is no server name given? (local driver) */
+       if(conn->uri->server != NULL)
+          return VIR_DRV_OPEN_DECLINED;
+
+       /* is path supported? */
+       if(conn->uri->path == NULL &&
+          STRNEQ(conn->uri->path, "/")) {
+          virReportError(VIR_ERR_INTERNAL_ERROR,
+                         _("Unexpected lxctools URI path '%s', try lxctools:///"),
+                         conn->uri->path);
+          return VIR_DRV_OPEN_ERROR;
+       }
+    }
+    
+    if(VIR_ALLOC(driver) < 0)
+       return VIR_DRV_OPEN_ERROR;
+
+    conn->privateData = driver; 
+
+    return VIR_DRV_OPEN_SUCCESS;
+}
+
 static virHypervisorDriver lxctoolsHypervisorDriver = {
     .name = "LXCTOOLS",
+    .connectOpen = lxctoolsConnectOpen, /* 0.3.1 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {

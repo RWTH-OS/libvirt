@@ -133,7 +133,7 @@ typedef enum {
     VIR_FROM_PERF = 65,         /* Error from perf */
     VIR_FROM_LIBSSH = 66,       /* Error from libssh connection transport */
     VIR_FROM_RESCTRL = 67,      /* Error from resource control */
-
+    VIR_FROM_LXCTOOLS = 68,     /* Error from lxctools driver */
 # ifdef VIR_ENUM_SENTINELS
     VIR_ERR_DOMAIN_LAST
 # endif
