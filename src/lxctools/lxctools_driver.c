@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <lxc/lxccontainer.h>
 
 #include "virerror.h"
@@ -54,15 +55,33 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
 
 #define LXCTOOLS_NB_MEM_PARAM 3
 
+#define LXCTOOLS_PATH "/var/lib/lxc"
+
+struct lxctools_driver {
+    char* path;
+};
+
+static int lxctoolsConnectNumOfDomains(virConnectPtr conn)
+{
+    struct lxctools_driver *driver = conn->privateData;
+    return list_all_containers(driver->path, NULL, NULL);
+}
+
 static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
 					  virConnectAuthPtr auth ATTRIBUTE_UNUSED,
 					  unsigned int flags)
 {
-    struct lxc_container *driver;
-
+    struct lxctools_driver *driver;
+    int path_len;
     virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
 
     if(conn->uri == NULL) {
+       if(!virFileExists(LXCTOOLS_PATH))
+          return VIR_DRV_OPEN_DECLINED;
+
+       if(!virFileIsDir(LXCTOOLS_PATH))
+	  return VIR_DRV_OPEN_DECLINED;
+
        if(!(conn->uri = virURIParse("lxctools:///")))
           return VIR_DRV_OPEN_ERROR;
     } else {
@@ -72,23 +91,53 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
           return VIR_DRV_OPEN_DECLINED;
 
        /* Is no server name given? (local driver) */
-       if(conn->uri->server != NULL)
-          return VIR_DRV_OPEN_DECLINED;
+       if (conn->uri->server != NULL)
+           return VIR_DRV_OPEN_DECLINED;
 
        /* is path supported? */
-       if(conn->uri->path == NULL &&
-          STRNEQ(conn->uri->path, "/")) {
-          virReportError(VIR_ERR_INTERNAL_ERROR,
-                         _("Unexpected lxctools URI path '%s', try lxctools:///"),
-                         conn->uri->path);
+       if (conn->uri->path != NULL &&
+           STRNEQ(conn->uri->path, "/")) {
+           virReportError(VIR_ERR_INTERNAL_ERROR,
+                          _("Unexpected lxctools URI path '%s', try lxctools:///"),
+                          conn->uri->path);
           return VIR_DRV_OPEN_ERROR;
        }
+       if (!virFileExists(LXCTOOLS_PATH)) {
+           virReportError(VIR_ERR_INTERNAL_ERROR, 
+                          _("lxctools directory '%s' does not exist"),
+                          LXCTOOLS_PATH);
+           return VIR_DRV_OPEN_ERROR;
+       }
+       if (!virFileIsDir(LXCTOOLS_PATH)) {
+           virReportError(VIR_ERR_INTERNAL_ERROR,
+                          _("lxctools directory '%s' is not a directory"),
+                          LXCTOOLS_PATH);
+           return VIR_DRV_OPEN_ERROR;
+       }
+
     }
     
-    if(VIR_ALLOC(driver) < 0)
+    if (VIR_ALLOC(driver) < 0)
        return VIR_DRV_OPEN_ERROR;
 
-    conn->privateData = driver; 
+    if ((path_len = strlen(LXCTOOLS_PATH)) < 0) {
+       VIR_FREE(driver);
+       return VIR_DRV_OPEN_ERROR;     
+    }
+
+    if (VIR_ALLOC_N(driver->path, path_len+1) < 0) {
+       VIR_FREE(driver);
+       return VIR_DRV_OPEN_ERROR;
+    }
+
+    if (!virStrncpy(driver->path, LXCTOOLS_PATH, path_len, path_len+1)) {
+       printf("c%d\n",path_len);
+       VIR_FREE(driver->path);
+       VIR_FREE(driver);
+       return VIR_DRV_OPEN_ERROR;
+    }
+
+    conn->privateData = driver;
 
     return VIR_DRV_OPEN_SUCCESS;
 }
@@ -96,6 +145,7 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
 static virHypervisorDriver lxctoolsHypervisorDriver = {
     .name = "LXCTOOLS",
     .connectOpen = lxctoolsConnectOpen, /* 0.3.1 */
+    .connectNumOfDomains = lxctoolsConnectNumOfDomains, /* 0.3.1 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
