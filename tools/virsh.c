@@ -581,6 +581,9 @@ virshShowVersion(vshControl *ctl ATTRIBUTE_UNUSED)
 #ifdef WITH_LXC
     vshPrint(ctl, " LXC");
 #endif
+#ifdef WITH_LXCTOOLS
+    vshPrint(ctl, " LXCTOOLS");
+#endif
 #ifdef WITH_UML
     vshPrint(ctl, " UML");
 #endif
