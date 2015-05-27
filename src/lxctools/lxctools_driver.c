@@ -104,9 +104,6 @@ static virConnectDriver lxctoolsConnectDriver = {
 
 int lxctoolsRegister(void)
 {
-	struct lxc_container *c;
-	c=lxc_container_new("test", NULL);
-	if(c) printf("yes"); else printf("no");
     return virRegisterConnectDriver(&lxctoolsConnectDriver,
                                     false);
 }
