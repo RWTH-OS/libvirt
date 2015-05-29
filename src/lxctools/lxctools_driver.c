@@ -46,6 +46,7 @@
 #include "viruri.h"
 #include "virstats.h"
 #include "virstring.h"
+#include "domain_conf.h"
 
 #include "lxctools_driver.h"
 
@@ -59,12 +60,91 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
 
 struct lxctools_driver {
     char* path;
+    virDomainObjListPtr domains;
+    int numOfDomains;
 };
+
+int lxctoolsLoadDomains(struct lxctools_driver *driver);
+void printUUID(const unsigned char *uuid);
+ 
+void printUUID(const unsigned char *uuid) {
+    char str[VIR_UUID_STRING_BUFLEN];
+    virUUIDFormat(uuid, str);
+    printf("UUID: %s\n", str);
+
+}
+
+int lxctoolsLoadDomains(struct lxctools_driver *driver)
+{
+    int i,flags;
+    virDomainObjPtr dom = NULL;
+    virDomainDefPtr def = NULL;
+    int cret_len;
+    struct lxc_container** cret;
+    char** names;
+    virDomainXMLOptionPtr xmlopt;
+    if ((cret_len = list_all_containers(driver->path, &names, &cret)) < 0)
+        goto cleanup;     
+
+    for (i=0; i < cret_len; ++i) {
+        if (!(def = virDomainDefNew()))
+            goto cleanup;
+
+        def->virtType = VIR_DOMAIN_VIRT_LXCTOOLS;
+        if (!cret[i]->is_running(cret[i]))
+            def->id = -1;
+        else
+            def->id = cret[i]->init_pid(cret[i]);
+   
+        if(virUUIDGenerate(def->uuid) < 0) {
+           goto cleanup;
+        } 
+
+        def->name = names[i];
+        
+        //printUUID(def->uuid);
+
+        flags = VIR_DOMAIN_OBJ_LIST_ADD_CHECK_LIVE;
+        if (def->id != -1)
+           flags |= VIR_DOMAIN_OBJ_LIST_ADD_LIVE;
+
+        if (!(xmlopt = virDomainXMLOptionNew(NULL, NULL, NULL)))
+            goto cleanup;
+
+        if (!(dom = virDomainObjListAdd(driver->domains,
+                                        def,
+                                        xmlopt,
+                                        flags,
+                                        NULL)))
+            goto cleanup;
+        if (!cret[i]->is_running(cret[i])) {
+            virDomainObjSetState(dom, VIR_DOMAIN_SHUTOFF,
+                                 VIR_DOMAIN_SHUTOFF_UNKNOWN);
+            dom->pid = -1;
+        } else {
+            virDomainObjSetState(dom, VIR_DOMAIN_RUNNING,
+                                 VIR_DOMAIN_RUNNING_UNKNOWN);
+            dom->pid = cret[i]->init_pid(cret[i]);
+        }
+        dom->persistent = 1;
+        virObjectUnlock(dom);
+        dom = NULL;
+        def = NULL;
+    }
+
+    return 0;
+ 
+ cleanup:
+    VIR_FREE(cret);
+    virObjectUnref(dom);
+    virDomainDefFree(def);
+    return -1;  
+}
 
 static int lxctoolsConnectNumOfDomains(virConnectPtr conn)
 {
     struct lxctools_driver *driver = conn->privateData;
-    return list_all_containers(driver->path, NULL, NULL);
+    return driver->numOfDomains;
 }
 
 static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
@@ -131,11 +211,30 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
     }
 
     if (!virStrncpy(driver->path, LXCTOOLS_PATH, path_len, path_len+1)) {
-       printf("c%d\n",path_len);
        VIR_FREE(driver->path);
        VIR_FREE(driver);
        return VIR_DRV_OPEN_ERROR;
     }
+
+    if ((driver->numOfDomains = list_all_containers(driver->path, NULL, NULL)) < 0){
+       VIR_FREE(driver->path);
+       VIR_FREE(driver);
+       return VIR_DRV_OPEN_ERROR;
+    }
+    if (!(driver->domains = virDomainObjListNew())) {
+       VIR_FREE(driver->path);
+       VIR_FREE(driver);
+       return VIR_DRV_OPEN_ERROR;
+    }
+
+    if (lxctoolsLoadDomains(driver) < 0) {
+       virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                      _("error while loading domains"));
+           
+       VIR_FREE(driver->path);
+       VIR_FREE(driver);
+       return VIR_DRV_OPEN_ERROR;
+    } 
 
     conn->privateData = driver;
 
