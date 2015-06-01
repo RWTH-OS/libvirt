@@ -47,6 +47,7 @@
 #include "virstats.h"
 #include "virstring.h"
 #include "domain_conf.h"
+#include "access/viraccessapicheck.h"
 
 #include "lxctools_driver.h"
 
@@ -71,6 +72,17 @@ static void printUUID(const unsigned char *uuid)
     printf("UUID: %s\n", str);
 
 }*/
+
+static int lxctoolsConnectListDomains(virConnectPtr conn, int *ids, int nids)
+{
+    struct lxctools_driver* driver = conn->privateData;
+    int n;
+    n = virDomainObjListGetActiveIDs(driver->domains, ids, nids,
+                                     NULL, NULL);
+
+    return n;
+
+}
 
 static void lxctoolsFreeDriver(struct lxctools_driver* driver)
 {
@@ -259,7 +271,8 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .name = "LXCTOOLS",
     .connectOpen = lxctoolsConnectOpen, /* 0.3.1 */
     .connectNumOfDomains = lxctoolsConnectNumOfDomains, /* 0.3.1 */
-    .connectClose = lxctoolsConnectClose, 
+    .connectClose = lxctoolsConnectClose,
+    .connectListDomains = lxctoolsConnectListDomains,
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
