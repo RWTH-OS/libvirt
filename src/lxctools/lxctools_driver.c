@@ -63,18 +63,33 @@ struct lxctools_driver {
     virDomainObjListPtr domains;
     int numOfDomains;
 };
-
-int lxctoolsLoadDomains(struct lxctools_driver *driver);
-void printUUID(const unsigned char *uuid);
- 
-void printUUID(const unsigned char *uuid) {
+/*
+static void printUUID(const unsigned char *uuid)
+{
     char str[VIR_UUID_STRING_BUFLEN];
     virUUIDFormat(uuid, str);
     printf("UUID: %s\n", str);
 
+}*/
+
+static void lxctoolsFreeDriver(struct lxctools_driver* driver)
+{
+    if(!driver)
+        return;
+    VIR_FREE(driver->path);
+    virObjectUnref(driver->domains);
+    VIR_FREE(driver);
 }
 
-int lxctoolsLoadDomains(struct lxctools_driver *driver)
+static int lxctoolsConnectClose(virConnectPtr conn)
+{
+    struct lxctools_driver *driver = conn->privateData;
+    lxctoolsFreeDriver(driver);
+    conn->privateData = NULL;
+    return 0;
+}
+
+static int lxctoolsLoadDomains(struct lxctools_driver *driver)
 {
     int i,flags;
     virDomainObjPtr dom = NULL;
@@ -215,7 +230,6 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
        VIR_FREE(driver);
        return VIR_DRV_OPEN_ERROR;
     }
-
     if ((driver->numOfDomains = list_all_containers(driver->path, NULL, NULL)) < 0){
        VIR_FREE(driver->path);
        VIR_FREE(driver);
@@ -245,6 +259,7 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .name = "LXCTOOLS",
     .connectOpen = lxctoolsConnectOpen, /* 0.3.1 */
     .connectNumOfDomains = lxctoolsConnectNumOfDomains, /* 0.3.1 */
+    .connectClose = lxctoolsConnectClose, 
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
