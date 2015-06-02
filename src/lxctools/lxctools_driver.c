@@ -46,8 +46,8 @@
 #include "viruri.h"
 #include "virstats.h"
 #include "virstring.h"
-#include "domain_conf.h"
 #include "access/viraccessapicheck.h"
+#include "lxctools_conf.h"
 
 #include "lxctools_driver.h"
 
@@ -59,19 +59,74 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
 
 #define LXCTOOLS_PATH "/var/lib/lxc"
 
-struct lxctools_driver {
-    char* path;
-    virDomainObjListPtr domains;
-    int numOfDomains;
-};
-/*
-static void printUUID(const unsigned char *uuid)
+static int lxctoolsDomainGetInfo(virDomainPtr dom,
+                                 virDomainInfoPtr info)
 {
-    char str[VIR_UUID_STRING_BUFLEN];
-    virUUIDFormat(uuid, str);
-    printf("UUID: %s\n", str);
+    struct lxctools_driver *driver = dom->conn->privateData;
+    struct lxc_container *cont;
+    virDomainObjPtr vm;
+    const char* state;
+    vm = virDomainObjListFindByName(driver->domains, dom->name);
 
-}*/
+    if (!vm) {
+        virReportError(VIR_ERR_NO_DOMAIN, "%s",
+                       _("no domain with matching id"));
+        goto cleanup;
+    }
+
+    cont = vm->privateData;
+    state = cont->state(cont);
+    info->state = lxcState2virState(state);
+    return 0;
+cleanup:
+    if(vm)
+        virObjectUnlock(vm);
+    return -1;
+}
+
+static virDomainPtr lxctoolsDomainLookupByID(virConnectPtr conn,
+                                             int id)
+{
+    struct lxctools_driver* driver = conn->privateData;
+    virDomainObjPtr obj;
+    virDomainPtr dom = NULL;
+
+    obj = virDomainObjListFindByID(driver->domains, id);
+
+    if (!obj) {
+        virReportError(VIR_ERR_NO_DOMAIN, NULL);
+    } else { 
+        dom = virGetDomain(conn, obj->def->name, obj->def->uuid);
+        if (dom)
+            dom->id = obj->def->id;
+    }
+    
+    if(obj)
+        virObjectUnlock(obj);
+    return dom;
+}
+
+static virDomainPtr lxctoolsDomainLookupByName(virConnectPtr conn,
+                                               const char *name)
+{
+    struct lxctools_driver* driver = conn->privateData;
+    virDomainObjPtr obj;
+    virDomainPtr dom = NULL;
+
+    obj = virDomainObjListFindByName(driver->domains, name);
+
+    if (!obj) {
+        virReportError(VIR_ERR_NO_DOMAIN, NULL);
+    } else { 
+        dom = virGetDomain(conn, obj->def->name, obj->def->uuid);
+        if (dom)
+            dom->id = obj->def->id;
+    }
+    
+    if(obj)
+        virObjectUnlock(obj);
+    return dom;   
+}
 
 static int lxctoolsConnectListDomains(virConnectPtr conn, int *ids, int nids)
 {
@@ -84,13 +139,13 @@ static int lxctoolsConnectListDomains(virConnectPtr conn, int *ids, int nids)
 
 }
 
-static void lxctoolsFreeDriver(struct lxctools_driver* driver)
+static int lxctoolsConnectListDefinedDomains(virConnectPtr conn,
+                                             char **const names,
+                                             int nnames)
 {
-    if(!driver)
-        return;
-    VIR_FREE(driver->path);
-    virObjectUnref(driver->domains);
-    VIR_FREE(driver);
+    struct lxctools_driver *driver = conn->privateData; 
+    return virDomainObjListGetInactiveNames(driver->domains, names, nnames,
+                                            NULL, NULL);  
 }
 
 static int lxctoolsConnectClose(virConnectPtr conn)
@@ -101,77 +156,16 @@ static int lxctoolsConnectClose(virConnectPtr conn)
     return 0;
 }
 
-static int lxctoolsLoadDomains(struct lxctools_driver *driver)
+static int lxctoolsConnectNumOfDefinedDomains(virConnectPtr conn)
 {
-    int i,flags;
-    virDomainObjPtr dom = NULL;
-    virDomainDefPtr def = NULL;
-    int cret_len;
-    struct lxc_container** cret;
-    char** names;
-    virDomainXMLOptionPtr xmlopt;
-    if ((cret_len = list_all_containers(driver->path, &names, &cret)) < 0)
-        goto cleanup;     
-
-    for (i=0; i < cret_len; ++i) {
-        if (!(def = virDomainDefNew()))
-            goto cleanup;
-
-        def->virtType = VIR_DOMAIN_VIRT_LXCTOOLS;
-        if (!cret[i]->is_running(cret[i]))
-            def->id = -1;
-        else
-            def->id = cret[i]->init_pid(cret[i]);
-   
-        if(virUUIDGenerate(def->uuid) < 0) {
-           goto cleanup;
-        } 
-
-        def->name = names[i];
-        
-        //printUUID(def->uuid);
-
-        flags = VIR_DOMAIN_OBJ_LIST_ADD_CHECK_LIVE;
-        if (def->id != -1)
-           flags |= VIR_DOMAIN_OBJ_LIST_ADD_LIVE;
-
-        if (!(xmlopt = virDomainXMLOptionNew(NULL, NULL, NULL)))
-            goto cleanup;
-
-        if (!(dom = virDomainObjListAdd(driver->domains,
-                                        def,
-                                        xmlopt,
-                                        flags,
-                                        NULL)))
-            goto cleanup;
-        if (!cret[i]->is_running(cret[i])) {
-            virDomainObjSetState(dom, VIR_DOMAIN_SHUTOFF,
-                                 VIR_DOMAIN_SHUTOFF_UNKNOWN);
-            dom->pid = -1;
-        } else {
-            virDomainObjSetState(dom, VIR_DOMAIN_RUNNING,
-                                 VIR_DOMAIN_RUNNING_UNKNOWN);
-            dom->pid = cret[i]->init_pid(cret[i]);
-        }
-        dom->persistent = 1;
-        virObjectUnlock(dom);
-        dom = NULL;
-        def = NULL;
-    }
-
-    return 0;
- 
- cleanup:
-    VIR_FREE(cret);
-    virObjectUnref(dom);
-    virDomainDefFree(def);
-    return -1;  
+    struct lxctools_driver *driver = conn->privateData;
+    return virDomainObjListNumOfDomains(driver->domains, false, NULL, NULL);
 }
 
 static int lxctoolsConnectNumOfDomains(virConnectPtr conn)
 {
     struct lxctools_driver *driver = conn->privateData;
-    return driver->numOfDomains;
+    return virDomainObjListNumOfDomains(driver->domains, true, NULL, NULL);    
 }
 
 static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
@@ -273,6 +267,11 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .connectNumOfDomains = lxctoolsConnectNumOfDomains, /* 0.3.1 */
     .connectClose = lxctoolsConnectClose,
     .connectListDomains = lxctoolsConnectListDomains,
+    .domainLookupByID = lxctoolsDomainLookupByID,
+    .domainGetInfo = lxctoolsDomainGetInfo,
+    .connectNumOfDefinedDomains = lxctoolsConnectNumOfDefinedDomains,
+    .connectListDefinedDomains = lxctoolsConnectListDefinedDomains,
+    .domainLookupByName = lxctoolsDomainLookupByName,
 };
 
 static virConnectDriver lxctoolsConnectDriver = {

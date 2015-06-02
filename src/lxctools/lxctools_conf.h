@@ -1,5 +1,5 @@
 /*
- * openvz_conf.h: config information for OpenVZ VPSs
+ * lxctools_conf.h: config information for LXCTOOLS domains
  *
  * Copyright (C) 2010 Red Hat, Inc.
  * Copyright (C) 2006, 2007 Binary Karma.
@@ -21,54 +21,28 @@
  * <http://www.gnu.org/licenses/>.
  *
  * Authors:
- * Shuveb Hussain <shuveb@binarykarma.com>
- * Anoop Joe Cyriac <anoop@binarykarma.com>
  *
  */
 
-#ifndef OPENVZ_CONF_H
-# define OPENVZ_CONF_H
+#ifndef LXCTOOLS_CONF_H
+# define LXCTOOLS_CONF_H
 
 # include "internal.h"
-# include "domain_conf.h"
-# include "virthread.h"
+#include <lxc/lxccontainer.h>
 
+#include "domain_conf.h"
 
-/* OpenVZ commands - Replace with wrapper scripts later? */
-# define VZLIST         "/usr/sbin/vzlist"
-# define VZCTL          "/usr/sbin/vzctl"
-# define VZMIGRATE      "/usr/sbin/vzmigrate"
-# define VZ_CONF_FILE   "/etc/vz/vz.conf"
-
-# define VZCTL_BRIDGE_MIN_VERSION ((3 * 1000 * 1000) + (0 * 1000) + 22 + 1)
-
-struct openvz_driver {
-    virMutex lock;
-
-    virCapsPtr caps;
-    virDomainXMLOptionPtr xmlopt;
+struct lxctools_driver {
+    char* path;
     virDomainObjListPtr domains;
-    int version;
+    int numOfDomains;
 };
 
-typedef int (*openvzLocateConfFileFunc)(int vpsid, char **conffile, const char *ext);
 
-/* this allows the testsuite to replace the conf file locator function */
-extern openvzLocateConfFileFunc openvzLocateConfFile;
+void lxctoolsFreeDriver(struct lxctools_driver* driver);
 
-int openvz_readline(int fd, char *ptr, int maxlen);
-int openvzExtractVersion(struct openvz_driver *driver);
-int openvzReadVPSConfigParam(int vpsid, const char *param, char **value);
-int openvzWriteVPSConfigParam(int vpsid, const char *param, const char *value);
-int openvzReadConfigParam(const char *conf_file, const char *param, char **value);
-int openvzCopyDefaultConfig(int vpsid);
-virCapsPtr openvzCapsInit(void);
-int openvzLoadDomains(struct openvz_driver *driver);
-void openvzFreeDriver(struct openvz_driver *driver);
-int strtoI(const char *str);
-int openvzSetDefinedUUID(int vpsid, unsigned char *uuid);
-unsigned int openvzGetNodeCPUs(void);
-int openvzGetVEID(const char *name);
-int openvzReadNetworkConf(virDomainDefPtr def, int veid);
+int lxctoolsLoadDomains(struct lxctools_driver *driver);
 
-#endif /* OPENVZ_CONF_H */
+virDomainState lxcState2virState(const char* state);
+
+#endif /* LXCTOOLS_CONF_H */
