@@ -71,7 +71,7 @@ void lxctoolsFreeDriver(struct lxctools_driver* driver)
 {
     if(!driver)
         return;
-    VIR_FREE(driver->path);
+    free((void*)driver->path);
     virObjectUnref(driver->domains);
     VIR_FREE(driver);
 }
@@ -82,6 +82,64 @@ static void container_cleaner(void* ptr) {
         cont = ptr;
         VIR_FREE(cont);
     }
+}
+
+unsigned long convertMemorySize(char* memory_str, unsigned int strlen) {
+    unsigned long ret;
+    switch(memory_str[strlen-1]) {
+        case 'g':
+        case 'G': 
+            ret = 1024*1024;
+            memory_str[strlen-1] = '\0';
+            ret *= strtol(memory_str, NULL, 10);
+            return ret;
+        case 'm':
+        case 'M': 
+            ret = 1024;
+            memory_str[strlen-1] = '\0';
+            ret *= strtol(memory_str, NULL, 10);
+            return ret;
+        case 'k':
+        case 'K':
+            memory_str[strlen-1] = '\0';
+            ret = strtol(memory_str, NULL, 10);
+            return ret;
+        default:
+            ret = strtol(memory_str, NULL, 10);
+            return ret/1024;            
+        }
+}
+
+unsigned long getHostMemory(virConnectPtr conn)
+{
+    virNodeInfoPtr info = NULL;
+    unsigned int ret = 0;
+    if (VIR_ALLOC(info) < 0)
+        goto cleanup;
+
+    if (virNodeGetInfo(conn, info) < 0)
+        goto cleanup;
+    
+    ret = info->memory;
+cleanup:
+    VIR_FREE(info);
+    return ret;
+}
+
+unsigned int getNumOfHostCPUs(virConnectPtr conn)
+{
+    virNodeInfoPtr info = NULL;
+    unsigned int ret = 0;
+    if (VIR_ALLOC(info) < 0)
+        goto cleanup;
+
+    if (virNodeGetInfo(conn, info) < 0)
+        goto cleanup;
+    
+    ret = info->cpus;
+cleanup:
+    VIR_FREE(info);
+    return ret;
 }
 
 int lxctoolsLoadDomains(struct lxctools_driver *driver)
