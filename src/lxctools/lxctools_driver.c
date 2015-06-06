@@ -55,7 +55,59 @@
 
 VIR_LOG_INIT("lxctools.lxctools_driver");
 
-static int lxctoolsDomainGetInfo(virDomainPtr dom,
+static int
+lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
+{
+    struct lxctools_driver *driver = dom->conn->privateData;
+    virDomainObjPtr vm;
+    struct lxc_container* cont;
+
+    virCheckFlags(0, -1);
+
+    vm = virDomainObjListFindByName(driver->domains, dom->name);
+
+    if(!vm) {
+        virReportError(VIR_ERR_NO_DOMAIN, 
+                        _("no domain with name '%s'"), dom->name);
+        goto cleanup;
+    }
+    
+    cont = vm->privateData;
+    
+    if (lxcState2virState(cont->state(cont)) != VIR_DOMAIN_SHUTOFF) {
+        virReportError(VIR_ERR_OPERATION_DENIED, "%s",
+                       _("domain is not in shutoff state"));
+        goto cleanup;
+    }
+
+    if (!cont->start(cont, false, NULL)) {
+        virReportError(VIR_ERR_OPERATION_ABORTED, "%s",
+                cont->error_string);
+        goto cleanup;
+    }
+
+    if ((vm->pid = cont->init_pid(cont)) < 0)
+        goto cleanup;
+    vm->def->id = vm->pid;
+    dom->id = vm->pid;
+
+    virDomainObjSetState(vm, VIR_DOMAIN_RUNNING, VIR_DOMAIN_RUNNING_BOOTED);
+   
+    return 0;
+cleanup:
+    if (vm)
+        virObjectUnlock(vm);
+    return -1;
+}
+
+static int
+lxctoolsDomainCreate(virDomainPtr dom)
+{
+    return lxctoolsDomainCreateWithFlags(dom, 0);
+}
+
+static int
+lxctoolsDomainGetInfo(virDomainPtr dom,
                                  virDomainInfoPtr info)
 {
     struct lxctools_driver *driver = dom->conn->privateData;
@@ -417,6 +469,8 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .nodeGetCellsFreeMemory = lxctoolsNodeGetCellsFreeMemory, /* 0.0.3 */
     .nodeGetFreeMemory = lxctoolsNodeGetFreeMemory, /* 0.0.3 */
     .nodeGetCPUMap = lxctoolsNodeGetCPUMap, /* 0.0.3 */
+    .domainCreate = lxctoolsDomainCreate, /* 0.0.4 */
+    .domainCreateWithFlags = lxctoolsDomainCreateWithFlags, /* 0.0.4 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
