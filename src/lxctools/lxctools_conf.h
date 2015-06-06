@@ -33,7 +33,7 @@
 #include "domain_conf.h"
 
 struct lxctools_driver {
-    char* path;
+    const char* path;
     virDomainObjListPtr domains;
     int numOfDomains;
 };
@@ -42,6 +42,11 @@ struct lxctools_driver {
 void lxctoolsFreeDriver(struct lxctools_driver* driver);
 
 int lxctoolsLoadDomains(struct lxctools_driver *driver);
+
+unsigned long convertMemorySize(char* memory_str, unsigned int strlen);
+
+unsigned int getNumOfHostCPUs(virConnectPtr conn);
+unsigned long getHostMemory(virConnectPtr conn);
 
 virDomainState lxcState2virState(const char* state);
 

@@ -55,10 +55,6 @@
 
 VIR_LOG_INIT("lxctools.lxctools_driver");
 
-#define LXCTOOLS_NB_MEM_PARAM 3
-
-#define LXCTOOLS_PATH "/var/lib/lxc"
-
 static int lxctoolsDomainGetInfo(virDomainPtr dom,
                                  virDomainInfoPtr info)
 {
@@ -66,8 +62,10 @@ static int lxctoolsDomainGetInfo(virDomainPtr dom,
     struct lxc_container *cont;
     virDomainObjPtr vm;
     const char* state;
+    char* config_item = NULL;
+    int config_item_len;
     vm = virDomainObjListFindByName(driver->domains, dom->name);
-
+    
     if (!vm) {
         virReportError(VIR_ERR_NO_DOMAIN, "%s",
                        _("no domain with matching id"));
@@ -77,10 +75,93 @@ static int lxctoolsDomainGetInfo(virDomainPtr dom,
     cont = vm->privateData;
     state = cont->state(cont);
     info->state = lxcState2virState(state);
+    
+    /* check CPU config */
+    if ((config_item_len = cont->get_config_item(cont,
+                    "lxc.cgroup.cpuset.cpus", NULL, 0)) < 0)
+        goto cleanup;
+    
+    if (VIR_ALLOC_N(config_item, config_item_len) < 0)
+        goto cleanup;
+    
+    if (config_item_len > 0 && 
+            cont->get_config_item(cont, "lxc.cgroup.cpuset.cpus", 
+                                  config_item, config_item_len) 
+            != config_item_len) {
+        goto cleanup;
+    }
+    if ((config_item_len > 0 &&
+        (info->nrVirtCpu = strtol(config_item, NULL, 10))) ||
+            (info->nrVirtCpu = getNumOfHostCPUs(dom->conn)) == 0) {
+        goto cleanup; 
+    } 
+    VIR_FREE(config_item);
+
+    /* check max memory config */
+    if ((config_item_len = cont->get_config_item(cont,
+                    "lxc.cgroup.memory.limit_in_bytes", NULL, 0)) < 0)
+        goto cleanup;
+    
+    if (VIR_ALLOC_N(config_item, config_item_len) < 0)
+        goto cleanup;
+    
+    if (config_item_len > 0 && 
+            cont->get_config_item(cont, "lxc.cgroup.memory.limit_in_bytes", 
+                                  config_item, config_item_len) 
+            != config_item_len) {
+        goto cleanup;
+    }
+    if (config_item_len > 0) {
+        info->maxMem = convertMemorySize(config_item, config_item_len); 
+    } else if ((info->maxMem = getHostMemory(dom->conn)) == 0) {
+        goto cleanup; 
+    } 
+    VIR_FREE(config_item);
+    
+    /* check memory usage */
+    if ((config_item_len = cont->get_cgroup_item(cont,
+                    "memory.usage_in_bytes", NULL, 0)) < 0)
+        goto cleanup;
+    if (VIR_ALLOC_N(config_item, config_item_len) < 0)
+        goto cleanup;
+    if (config_item_len > 0 && 
+            cont->get_cgroup_item(cont, "memory.usage_in_bytes", 
+                                  config_item, config_item_len) 
+            != config_item_len) {
+        goto cleanup;
+    }
+    if (config_item_len > 0) {
+        info->memory = (strtol(config_item, NULL, 10)>>10);
+    } else {
+        info->memory = 0L;
+    } 
+    VIR_FREE(config_item);
+
+    /* check cpu time */
+    if ((config_item_len = cont->get_cgroup_item(cont,
+                    "cpuacct.usage", NULL, 0)) < 0)
+        goto cleanup;
+    
+    if (VIR_ALLOC_N(config_item, config_item_len) < 0)
+        goto cleanup;
+    
+    if (config_item_len > 0 && 
+            cont->get_cgroup_item(cont, "cpuacct.usage", 
+                                  config_item, config_item_len) 
+            != config_item_len) {
+        goto cleanup;
+    }
+    if (config_item_len > 0) {
+       info->cpuTime = strtol(config_item, NULL, 10);
+    } else {
+       info->cpuTime = 0L;
+    } 
+    VIR_FREE(config_item);
     return 0;
 cleanup:
     if(vm)
         virObjectUnlock(vm);
+    VIR_FREE(config_item);
     return -1;
 }
 
@@ -172,19 +253,28 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
 					  virConnectAuthPtr auth ATTRIBUTE_UNUSED,
 					  unsigned int flags)
 {
-    struct lxctools_driver *driver;
-    int path_len;
+    struct lxctools_driver *driver = NULL;
+    const char* lxcpath = NULL;
     virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
 
     if(conn->uri == NULL) {
-       if(!virFileExists(LXCTOOLS_PATH))
-          return VIR_DRV_OPEN_DECLINED;
+       if (!(lxcpath = lxc_get_global_config_item("lxc.lxcpath"))) {
+           virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                          _("could not get lxc.lxcpath config item"));
+           return VIR_DRV_OPEN_DECLINED;
+       }
+       if (!virFileExists(lxcpath)) {
+           free((void*)lxcpath);
+           return VIR_DRV_OPEN_DECLINED;
+       }
+       if (!virFileIsDir(lxcpath)) {
+           free((void*)lxcpath);
+	       return VIR_DRV_OPEN_DECLINED;
+       }
 
-       if(!virFileIsDir(LXCTOOLS_PATH))
-	  return VIR_DRV_OPEN_DECLINED;
-
-       if(!(conn->uri = virURIParse("lxctools:///")))
-          return VIR_DRV_OPEN_ERROR;
+       if(!(conn->uri = virURIParse("lxctools:///"))) {
+           goto cleanup;
+       }
     } else {
        /* Is schme for 'lxctools'? */
        if(conn->uri->scheme == NULL ||
@@ -201,77 +291,132 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
            virReportError(VIR_ERR_INTERNAL_ERROR,
                           _("Unexpected lxctools URI path '%s', try lxctools:///"),
                           conn->uri->path);
-          return VIR_DRV_OPEN_ERROR;
+           goto cleanup;
        }
-       if (!virFileExists(LXCTOOLS_PATH)) {
+       if (!(lxcpath = lxc_get_global_config_item("lxc.lxcpath"))) {
+           virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                          _("could not get lxc.lxcpath config item"));
+           goto cleanup;
+       }
+       if (!virFileExists(lxcpath)) {
            virReportError(VIR_ERR_INTERNAL_ERROR, 
                           _("lxctools directory '%s' does not exist"),
-                          LXCTOOLS_PATH);
-           return VIR_DRV_OPEN_ERROR;
+                          lxcpath);
+           goto cleanup;
        }
-       if (!virFileIsDir(LXCTOOLS_PATH)) {
+       if (!virFileIsDir(lxcpath)) {
            virReportError(VIR_ERR_INTERNAL_ERROR,
                           _("lxctools directory '%s' is not a directory"),
-                          LXCTOOLS_PATH);
-           return VIR_DRV_OPEN_ERROR;
+                          lxcpath);
+            goto cleanup;
        }
 
     }
     
     if (VIR_ALLOC(driver) < 0)
-       return VIR_DRV_OPEN_ERROR;
+       goto cleanup;
 
-    if ((path_len = strlen(LXCTOOLS_PATH)) < 0) {
-       VIR_FREE(driver);
-       return VIR_DRV_OPEN_ERROR;     
-    }
+    driver->path = lxcpath;
+    driver->domains = NULL;
 
-    if (VIR_ALLOC_N(driver->path, path_len+1) < 0) {
-       VIR_FREE(driver);
-       return VIR_DRV_OPEN_ERROR;
-    }
-
-    if (!virStrncpy(driver->path, LXCTOOLS_PATH, path_len, path_len+1)) {
-       VIR_FREE(driver->path);
-       VIR_FREE(driver);
-       return VIR_DRV_OPEN_ERROR;
-    }
     if ((driver->numOfDomains = list_all_containers(driver->path, NULL, NULL)) < 0){
-       VIR_FREE(driver->path);
-       VIR_FREE(driver);
-       return VIR_DRV_OPEN_ERROR;
+       goto cleanup;     
     }
     if (!(driver->domains = virDomainObjListNew())) {
-       VIR_FREE(driver->path);
-       VIR_FREE(driver);
-       return VIR_DRV_OPEN_ERROR;
+       goto cleanup;
     }
 
     if (lxctoolsLoadDomains(driver) < 0) {
        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                       _("error while loading domains"));
            
-       VIR_FREE(driver->path);
-       VIR_FREE(driver);
-       return VIR_DRV_OPEN_ERROR;
+       goto cleanup;
     } 
 
     conn->privateData = driver;
 
     return VIR_DRV_OPEN_SUCCESS;
+cleanup:
+    free((char*)lxcpath);
+    if (driver) {
+        if (driver->domains)
+            virObjectUnref(driver->domains);
+        VIR_FREE(driver);
+    }
+    return VIR_DRV_OPEN_ERROR;
+}
+
+static int
+lxctoolsNodeGetInfo(virConnectPtr conn ATTRIBUTE_UNUSED,
+                               virNodeInfoPtr nodeinfo)
+{
+    return nodeGetInfo(nodeinfo);
+}    
+
+static int
+lxctoolsNodeGetCPUStats(virConnectPtr conn ATTRIBUTE_UNUSED,
+                                   int cpuNum,
+                                   virNodeCPUStatsPtr params,
+                                   int *nparams,
+                                   unsigned int flags)
+{
+    return nodeGetCPUStats(cpuNum, params, nparams, flags);
+}
+
+static int 
+lxctoolsNodeGetMemoryStats(virConnectPtr conn ATTRIBUTE_UNUSED,
+                                      int cellNum,
+                                      virNodeMemoryStatsPtr params,
+                                      int *nparams,
+                                      unsigned int flags)
+{
+    return nodeGetMemoryStats(cellNum, params, nparams, flags);
+}
+
+static int
+lxctoolsNodeGetCellsFreeMemory(virConnectPtr conn ATTRIBUTE_UNUSED,
+                               unsigned long long *freeMems,
+                               int startCell,
+                               int maxCells)
+{
+    return nodeGetCellsFreeMemory(freeMems, startCell, maxCells);
+}
+
+static unsigned long long
+lxctoolsNodeGetFreeMemory(virConnectPtr conn ATTRIBUTE_UNUSED)
+{
+    unsigned long long freeMem;
+    if(nodeGetMemory(NULL, &freeMem) < 00)
+        return 0;
+    return freeMem;
+}
+
+static int
+lxctoolsNodeGetCPUMap(virConnectPtr conn ATTRIBUTE_UNUSED,
+                      unsigned char **cpumap,
+                      unsigned int *online,
+                      unsigned int flags)
+{
+    return nodeGetCPUMap(cpumap, online, flags);
 }
 
 static virHypervisorDriver lxctoolsHypervisorDriver = {
     .name = "LXCTOOLS",
-    .connectOpen = lxctoolsConnectOpen, /* 0.3.1 */
-    .connectNumOfDomains = lxctoolsConnectNumOfDomains, /* 0.3.1 */
-    .connectClose = lxctoolsConnectClose,
-    .connectListDomains = lxctoolsConnectListDomains,
-    .domainLookupByID = lxctoolsDomainLookupByID,
-    .domainGetInfo = lxctoolsDomainGetInfo,
-    .connectNumOfDefinedDomains = lxctoolsConnectNumOfDefinedDomains,
-    .connectListDefinedDomains = lxctoolsConnectListDefinedDomains,
-    .domainLookupByName = lxctoolsDomainLookupByName,
+    .connectOpen = lxctoolsConnectOpen, /* 0.0.1 */
+    .connectNumOfDomains = lxctoolsConnectNumOfDomains, /* 0.0.1 */
+    .connectClose = lxctoolsConnectClose, /* 0.0.2 */
+    .connectListDomains = lxctoolsConnectListDomains, /* 0.0.2 */
+    .domainLookupByID = lxctoolsDomainLookupByID, /* 0.0.2 */
+    .domainGetInfo = lxctoolsDomainGetInfo, /* 0.0.2 */
+    .connectNumOfDefinedDomains = lxctoolsConnectNumOfDefinedDomains, /* 0.0.2 */
+    .connectListDefinedDomains = lxctoolsConnectListDefinedDomains, /* 0.0.2 */
+    .domainLookupByName = lxctoolsDomainLookupByName, /* 0.0.2 */
+    .nodeGetInfo = lxctoolsNodeGetInfo, /* 0.0.3 */
+    .nodeGetCPUStats = lxctoolsNodeGetCPUStats, /* 0.0.3 */
+    .nodeGetMemoryStats = lxctoolsNodeGetMemoryStats, /* 0.0.3 */
+    .nodeGetCellsFreeMemory = lxctoolsNodeGetCellsFreeMemory, /* 0.0.3 */
+    .nodeGetFreeMemory = lxctoolsNodeGetFreeMemory, /* 0.0.3 */
+    .nodeGetCPUMap = lxctoolsNodeGetCPUMap, /* 0.0.3 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
