@@ -170,15 +170,23 @@ lxctoolsDomainGetInfo(virDomainPtr dom,
     } 
     VIR_FREE(config_item);
     
+    if (!cont->is_running(cont)) {
+        /* inactive containers do not use up any memory or cpu time */
+        info->memory = 0L;
+        info->cpuTime = 0L;
+        return 0;
+    }
     /* check memory usage */
     if ((config_item_len = cont->get_cgroup_item(cont,
-                    "memory.usage_in_bytes", NULL, 0)) < 0)
+                    "memory.usage_in_bytes", NULL, 0)) < 0) {
+        printf("couldnt get cgroup item\n");
         goto cleanup;
+    }
     if (VIR_ALLOC_N(config_item, config_item_len) < 0)
         goto cleanup;
     if (config_item_len > 0 && 
             cont->get_cgroup_item(cont, "memory.usage_in_bytes", 
-                                  config_item, config_item_len) 
+                                    config_item, config_item_len) 
             != config_item_len) {
         goto cleanup;
     }
@@ -186,9 +194,8 @@ lxctoolsDomainGetInfo(virDomainPtr dom,
         info->memory = (strtol(config_item, NULL, 10)>>10);
     } else {
         info->memory = 0L;
-    } 
+    }
     VIR_FREE(config_item);
-
     /* check cpu time */
     if ((config_item_len = cont->get_cgroup_item(cont,
                     "cpuacct.usage", NULL, 0)) < 0)
@@ -211,6 +218,7 @@ lxctoolsDomainGetInfo(virDomainPtr dom,
     VIR_FREE(config_item);
     return 0;
 cleanup:
+    printf("cleanup\n");
     if(vm)
         virObjectUnlock(vm);
     VIR_FREE(config_item);
