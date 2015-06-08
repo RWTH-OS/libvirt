@@ -54,14 +54,13 @@
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
 
 VIR_LOG_INIT("lxctools.lxctools_driver");
-
 static int
-lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
+lxctoolsDomainShutdownFlags(virDomainPtr dom, unsigned int flags)
 {
     struct lxctools_driver *driver = dom->conn->privateData;
     virDomainObjPtr vm;
     struct lxc_container* cont;
-
+    int ret = -1;
     virCheckFlags(0, -1);
 
     vm = virDomainObjListFindByName(driver->domains, dom->name);
@@ -74,25 +73,92 @@ lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
     
     cont = vm->privateData;
     
-    if (lxcState2virState(cont->state(cont)) != VIR_DOMAIN_SHUTOFF) {
+    if (!cont->is_running(cont)) {
+        virReportError(VIR_ERR_OPERATION_DENIED, "%s",
+                       _("domain is not in running state"));
+        goto cleanup;
+    }
+  
+    if (!cont->stop(cont)) {
+        goto cleanup;
+    }
+
+    vm->def->id = -1;
+    virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF, VIR_DOMAIN_SHUTOFF_SHUTDOWN);
+    dom->id = -1;
+    ret = 0;
+
+cleanup:
+    if (vm)
+        virObjectUnlock(vm);
+    return ret;
+}
+
+static int
+lxctoolsDomainDestroy(virDomainPtr dom)
+{
+    return lxctoolsDomainShutdownFlags(dom, 0);
+}
+
+static int
+lxctoolsDomainDestroyFlags(virDomainPtr dom, unsigned int flags)
+{
+    return lxctoolsDomainShutdownFlags(dom, flags);
+}
+
+static int
+lxctoolsDomainShutdown(virDomainPtr dom)
+{
+    return lxctoolsDomainShutdownFlags(dom, 0);
+}
+
+static int
+lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
+{
+    struct lxctools_driver *driver = dom->conn->privateData;
+    virDomainObjPtr vm;
+    struct lxc_container* cont;
+    const char *prog[] = {"lxc-start", "-d", "-n", "cont1", NULL};
+    virCheckFlags(0, -1);
+
+    vm = virDomainObjListFindByName(driver->domains, dom->name);
+
+    if(!vm) {
+        virReportError(VIR_ERR_NO_DOMAIN, 
+                        _("no domain with name '%s'"), dom->name);
+        goto cleanup;
+    }
+    
+    cont = vm->privateData;
+    
+    if (cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_DENIED, "%s",
                        _("domain is not in shutoff state"));
         goto cleanup;
     }
+    
+    /*  
+    if (!cont->start(cont, 0, NULL)) {
+        printf("errorcnt: %d\n", cont->error_num);
+        virReportError(VIR_ERR_OPERATION_ABORTED, "%s",
+                cont->error_string);
+        goto cleanup;
+    }*/
 
-    if (!cont->start(cont, false, NULL)) {
+    if (virRun(prog, NULL) < 0) {
         virReportError(VIR_ERR_OPERATION_ABORTED, "%s",
                 cont->error_string);
         goto cleanup;
     }
-
+    
     if ((vm->pid = cont->init_pid(cont)) < 0)
         goto cleanup;
     vm->def->id = vm->pid;
     dom->id = vm->pid;
 
     virDomainObjSetState(vm, VIR_DOMAIN_RUNNING, VIR_DOMAIN_RUNNING_BOOTED);
-   
+    if (vm)
+        virObjectUnlock(vm);  
     return 0;
 cleanup:
     if (vm)
@@ -479,6 +545,10 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .nodeGetCPUMap = lxctoolsNodeGetCPUMap, /* 0.0.3 */
     .domainCreate = lxctoolsDomainCreate, /* 0.0.4 */
     .domainCreateWithFlags = lxctoolsDomainCreateWithFlags, /* 0.0.4 */
+    .domainShutdown = lxctoolsDomainShutdown, /* 0.0.5 */
+    .domainShutdownFlags = lxctoolsDomainShutdownFlags, /* 0.0.5 */
+    .domainDestroy = lxctoolsDomainDestroy, /* 0.0.5 */
+    .domainDestroyFlags = lxctoolsDomainDestroyFlags, /* 0.0.5 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
