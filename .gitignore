@@ -18,6 +18,7 @@
 *.o
 *.orig
 *.pem
+*.po
 *.pyc
 *.rej
 *.s
