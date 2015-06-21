@@ -34,7 +34,8 @@
 #include <string.h>
 
 #include "viralloc.h"
-
+#include "vircommand.h"
+#include "virstring.h"
 #include "lxctools_conf.h"
 
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
@@ -48,6 +49,68 @@ static void printUUID(const unsigned char *uuid)
 
 }*/
 
+char* getContainerNameFromPath(const char* path)
+{
+    int pathlen;
+    int i = 0;
+    char* ret = NULL;
+    if (path == NULL)
+        return NULL;
+
+    pathlen = strlen(path);
+
+    if (path[pathlen-1] == '/') {
+        pathlen--;
+    }
+    i = pathlen - 1;
+    while(i > 0 && path[i] != '/') {
+        i--;
+    }
+
+    if (VIR_ALLOC_N(ret, pathlen-i) < 0) {
+        return NULL;
+    }
+
+    return virStrncpy(ret, path+i+1, pathlen-i-1, pathlen-i);
+}
+
+char* concatPaths(const char* path1, const char* path2)
+{
+    char* ret;
+    int path1len, path2len;
+    int retlen;
+    if (path1 == NULL)
+        path1len = 0;
+    else
+        path1len = strlen(path1);
+
+    if (path2 == NULL)
+        path2len = 0;
+    else
+        path2len = strlen(path2);
+
+    if (path1[path1len-1] != '/')
+        retlen = path1len+path2len+1;
+    else
+        retlen = path1len+path2len;
+
+    if (VIR_ALLOC_N(ret, retlen) < 0) {
+        return NULL;
+    }
+
+    if (path1[path1len-1] != '/')
+        sprintf(ret, "%s/%s", path1, path2);
+    else
+        sprintf(ret, "%s%s", path1, path2);
+
+    return ret;
+}
+
+bool criuExists(void)
+{
+    const char* prog[] = {"which", "criu", NULL};
+    return (virRun(prog, NULL) == 0);
+}
 
 virDomainState lxcState2virState(const char* state)
 {
@@ -152,9 +215,10 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
     char** names;
     virDomainXMLOptionPtr xmlopt;
     if ((cret_len = list_all_containers(driver->path, &names, &cret)) < 0)
-        goto cleanup;     
+        goto cleanup;
 
     for (i=0; i < cret_len; ++i) {
+        //cret[i]->set_config_item(cret[i],"lxc.loglevel", "1");
         if (!(def = virDomainDefNew()))
             goto cleanup;
 
@@ -163,13 +227,13 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
             def->id = -1;
         else
             def->id = cret[i]->init_pid(cret[i]);
-   
+
         if(virUUIDGenerate(def->uuid) < 0) {
            goto cleanup;
-        } 
+        }
 
         def->name = names[i];
-        
+
         //printUUID(def->uuid);
 
         flags = VIR_DOMAIN_OBJ_LIST_ADD_CHECK_LIVE;
