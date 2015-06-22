@@ -86,7 +86,7 @@ lxctoolsDomainMigrateBegin3Params(virDomainPtr domain,
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         return NULL;
 
-    vm = virDomainObjListFindByName(driver->domains, "cont1");
+    vm = virDomainObjListFindByUUID(driver->domains, domain->uuid);
 
     if (!vm) {
         virReportError(VIR_ERR_NO_DOMAIN, "%s",
@@ -99,7 +99,7 @@ lxctoolsDomainMigrateBegin3Params(virDomainPtr domain,
         goto cleanup;
     }
 
-   // xml = virDomainDefFormat(vm->def, VIR_DOMAIN_DEF_FORMAT_SECURE);
+    xml = virDomainDefFormat(vm->def, VIR_DOMAIN_DEF_FORMAT_SECURE);
  cleanup:
     if (vm)
         virObjectUnlock(vm);
@@ -124,25 +124,37 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
 {
     struct lxctools_driver *driver = dconn->privateData;
     virDomainObjPtr vm = NULL;
+    char* dname;
     int ret = -1;
     virCheckFlags(0, -1);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         goto cleanup;
 
-    vm = virDomainObjListFindByName(driver->domains, "cont1");
+    if (virTypedParamsGetString(params, nparams,
+                                VIR_MIGRATE_PARAM_DEST_NAME,
+                                &dname) < 0)
+        goto cleanup;
+
+    vm = virDomainObjListFindByName(driver->domains, dname);
 
     if (!vm) {
-        virReportError(VIR_ERR_NO_DOMAIN, "%s",
-                       _("no domain with matching uuid"));
+        virReportError(VIR_ERR_NO_DOMAIN,
+                       _("no domain with name '%s'"),
+                       dname);
         goto cleanup;
     }
 
-    if (!virDomainObjIsActive(vm)) {
+    if (virDomainObjIsActive(vm)) {
         virReportError(VIR_ERR_OPERATION_INVALID,
-                       "%s", _("domain is not running"));
+                       "%s", _("domain is already running"));
         goto cleanup;
     }
 
+    /*
+     * -create tmpfs
+     * -start criu page-server
+     *  'criu page-server --images-dir tmpfs-checkpoint/ --port 1234'
+     */
 
     ret = 0;
  cleanup:
@@ -168,6 +180,17 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain ATTRIBUTE_UNUSED,
                                     unsigned int flags)
 {
     virCheckFlags(0, -1);
+
+    /*
+     * -create tmpfs
+     * -criu dump
+     *  'criu dump --tcp-established --file-locks --link-remap --force-irmap --manage-cgroups --ext-mount-map auto --enable-external-sharing --enable-external-masters --enable-fs hugetlbfs --tree 1082 --images-dir tmpfs-checkpoint/ --leave-stopped --page-server --address 192.168.122.3 --port 1234'
+     * -copy remaining files
+     *  'scp -r tmpfs-checkpoint 192.168.122.3:/root/'
+     *  (check for libvirt api for filetranfer)
+     * -check if successful & vm stopped
+     * -unmount tmpfs
+     */
     return 0;
 }
 
@@ -189,6 +212,11 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn ATTRIBUTE_UNUSED,
                                    int cancelled ATTRIBUTE_UNUSED)
 {
     virCheckFlags(0, NULL);
+    /*
+     * restore via lxc-api
+     * check if successfull & running
+     * unmount tmpfs
+     */
     return NULL;
 }
 
@@ -206,6 +234,9 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain ATTRIBUTE_UNUSED,
                                     int cancelled ATTRIBUTE_UNUSED)
 {
     virCheckFlags(0, -1);
+    /*
+     * probably needed for live-migration
+     */
     return 0;
 }
 
