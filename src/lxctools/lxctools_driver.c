@@ -124,7 +124,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
 {
     struct lxctools_driver *driver = dconn->privateData;
     virDomainObjPtr vm = NULL;
-    char* dname;
+    const char* dname;
     int ret = -1;
     virCheckFlags(0, -1);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
