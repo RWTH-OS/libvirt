@@ -32,10 +32,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/mount.h>
 
 #include "viralloc.h"
 #include "vircommand.h"
 #include "virstring.h"
+#include "virfile.h"
 #include "lxctools_conf.h"
 
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
@@ -48,6 +50,25 @@ static void printUUID(const unsigned char *uuid)
     printf("UUID: %s\n", str);
 
 }*/
+
+bool createTmpfs(const char* path)
+{
+    if (!virFileExists(path)) {
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("path '%s' does not exist"),
+                       path);
+        return false;
+    }
+
+    if (!virFileIsDir(path)) {
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("path '%s' does not point to a directory"),
+                       path);
+        return false;
+    }
+
+    return (mount("none", path, "tmpfs", 0,"") == 0);
+}
 
 char* getContainerNameFromPath(const char* path)
 {
@@ -151,13 +172,13 @@ unsigned long convertMemorySize(char* memory_str, unsigned int strlen) {
     unsigned long ret;
     switch(memory_str[strlen-1]) {
         case 'g':
-        case 'G': 
+        case 'G':
             ret = 1024*1024;
             memory_str[strlen-1] = '\0';
             ret *= strtol(memory_str, NULL, 10);
             return ret;
         case 'm':
-        case 'M': 
+        case 'M':
             ret = 1024;
             memory_str[strlen-1] = '\0';
             ret *= strtol(memory_str, NULL, 10);
@@ -169,7 +190,7 @@ unsigned long convertMemorySize(char* memory_str, unsigned int strlen) {
             return ret;
         default:
             ret = strtol(memory_str, NULL, 10);
-            return ret/1024;            
+            return ret/1024;
         }
 }
 
@@ -182,7 +203,7 @@ unsigned long getHostMemory(virConnectPtr conn)
 
     if (virNodeGetInfo(conn, info) < 0)
         goto cleanup;
-    
+
     ret = info->memory;
 cleanup:
     VIR_FREE(info);
@@ -198,7 +219,7 @@ unsigned int getNumOfHostCPUs(virConnectPtr conn)
 
     if (virNodeGetInfo(conn, info) < 0)
         goto cleanup;
-    
+
     ret = info->cpus;
 cleanup:
     VIR_FREE(info);

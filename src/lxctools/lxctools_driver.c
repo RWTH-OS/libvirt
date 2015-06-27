@@ -1,5 +1,5 @@
 /*
- * lxctools_driver.c: core driver methods for managing LXCTool Containers
+ * lxctools_driver.c: core driver functions for managing LXCTool Containers
  *
  * Copyright (C) 2010-2015 Red Hat, Inc.
  * Copyright (C) 2006, 2007 Binary Karma
@@ -56,15 +56,18 @@
 
 VIR_LOG_INIT("lxctools.lxctools_driver");
 /* TODO:
+ * - add virConnectGetCapabilities
+ * - add virConnectGetVersion
  * - add better errors to DomainInfo
- *   - Debug DomainInfo (cont1 doesnt show up)
- *   redo start with proper api call (or at least try)
+ * - redo start with proper api call (or at least try)
+ *   (may_control returned false. check this)
  * - write some tests
  * - migration
  * - create, delete
  * - XML impl
  * - debug
  */
+
 /*
  * Src: Begin
  *      - Generate XML to pass to dst
@@ -125,6 +128,12 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
     struct lxctools_driver *driver = dconn->privateData;
     virDomainObjPtr vm = NULL;
     const char* dname;
+    char* tmpfs_path = NULL;
+    const char* criu_cmd[] = {"criu", "page-server", "--images", NULL,
+                              "--port", LXCTOOLS_CRIU_PORT, NULL};
+    const char* copysrv_cmd[] = {"nc", "-w", "10", "-l", "-p",
+                                 LXCTOOLS_COPY_PORT, NULL, NULL};
+    struct lxc_container* cont;
     int ret = -1;
     virCheckFlags(0, -1);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
@@ -144,6 +153,13 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
         goto cleanup;
     }
 
+    if (!(cont = vm->privateData)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("inconsistent data for container '%s'"),
+                       dname);
+        goto cleanup;
+    }
+
     if (virDomainObjIsActive(vm)) {
         virReportError(VIR_ERR_OPERATION_INVALID,
                        "%s", _("domain is already running"));
@@ -156,10 +172,43 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
      *  'criu page-server --images-dir tmpfs-checkpoint/ --port 1234'
      */
 
+    if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
+                                  "migrate_tmpfs")) == NULL)
+        goto cleanup;
+
+    if (!createTmpfs(tmpfs_path)) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("could not create tmpfs at '%s'"),
+                       tmpfs_path);
+        goto cleanup;
+    }
+
+    /* fill tmpf path in criu the criu cmd to be called next */
+    criu_cmd[3] = tmpfs_path;
+    copysrv_cmd[6] = tmpfs_path;
+
+    if (virRun(criu_cmd, NULL) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("criu call returned bad exit code"));
+        goto cleanup;
+    }
+
+    if (virRun(copysrv_cmd, NULL) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("copy-server call returned bad exit code"));
+        goto cleanup;
+    }
+
+    /* check if it makes sense to fork before starting the
+     * page-server (blocking)
+     */
+
     ret = 0;
  cleanup:
     if(vm)
         virObjectUnlock(vm);
+
+    VIR_FREE(tmpfs_path);
     return ret;
 }
 
@@ -169,9 +218,9 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
  *      - Generate optional cookie to pass to dst
  */
 static int
-lxctoolsDomainMigratePerform3Params(virDomainPtr domain ATTRIBUTE_UNUSED,
-                                    const char *dconnuri ATTRIBUTE_UNUSED,
-                                    virTypedParameterPtr params ATTRIBUTE_UNUSED,
+lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
+                                    const char *dconnuri,
+                                    virTypedParameterPtr params,
                                     int nparams ATTRIBUTE_UNUSED,
                                     const char* cookiein ATTRIBUTE_UNUSED,
                                     int cookieinlen ATTRIBUTE_UNUSED,
@@ -179,7 +228,49 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain ATTRIBUTE_UNUSED,
                                     int *cookieoutlen ATTRIBUTE_UNUSED,
                                     unsigned int flags)
 {
+    virDomainObjPtr vm = NULL;
+    struct lxctools_driver *driver = domain->conn->privateData;
+    struct lxc_container* cont;
+    char* tmpfs_path = NULL;
+    char pid_str[15];
+    int ret = -1;
+    printf("connecting to %s\n", dconnuri);
+    const char* criu_cmd[] = {"criu", "dump", "--tcp-established",
+                              "--file-locks", "--link-remap",
+                              "--force-irmap", "--manage-cgroups",
+                              "--ext-mount-map", "auto",
+                              "--enable-external-sharing",
+                              "--enable-external-masters",
+                              "--enable-fs", "hugetlbfs", "--tree",
+                              NULL, "--images-dir", NULL,
+                              "--page-server", dconnuri,
+                              "--port", LXCTOOLS_CRIU_PORT,
+                              "--leave-stopped", NULL};
+    const char* copy_cmd[] = {"tar", "-c", NULL, "|", "nc",
+                              dconnuri, LXCTOOLS_COPY_PORT, NULL};
     virCheckFlags(0, -1);
+    if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
+        return -1;
+
+    vm = virDomainObjListFindByUUID(driver->domains, domain->uuid);
+
+    if (!vm) {
+        virReportError(VIR_ERR_NO_DOMAIN, "%s",
+                       _("no domain with matching uuid"));
+    }
+
+    if (!(cont = vm->privateData)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("inconsistent data for container '%s'"),
+                       domain->name);
+        goto cleanup;
+    }
+
+    if (!virDomainObjIsActive(vm)) {
+        virReportError(VIR_ERR_OPERATION_INVALID,
+                       "%s", _("domain is not running"));
+        goto cleanup;
+    }
 
     /*
      * -create tmpfs
@@ -191,7 +282,45 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain ATTRIBUTE_UNUSED,
      * -check if successful & vm stopped
      * -unmount tmpfs
      */
-    return 0;
+    /* set --tree option */
+    sprintf(pid_str, "%d", cont->init_pid(cont));
+    criu_cmd[14] = pid_str;
+
+    if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
+                                  "migrate_tmpfs")) == NULL)
+        goto cleanup;
+
+    if (!createTmpfs(tmpfs_path)) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("could not create tmpfs at '%s'"),
+                       tmpfs_path);
+        goto cleanup;
+    }
+
+    /* set --images-dir option */
+    criu_cmd[16] = tmpfs_path;
+    copy_cmd[2] = tmpfs_path;
+
+    if (virRun(criu_cmd, NULL) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("criu call returned bad exit code"));
+        goto cleanup;
+    }
+
+    if (virRun(copy_cmd, NULL) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("copy call returned bad exit code"));
+        /* restart container */
+        goto cleanup;
+    }
+
+    ret = 0;
+cleanup:
+    if(vm)
+        virObjectUnlock(vm);
+
+    VIR_FREE(tmpfs_path);
+    return ret;
 }
 
 /*
@@ -808,7 +937,7 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
            goto cleanup;
        }
        if (!virFileExists(lxcpath)) {
-           virReportError(VIR_ERR_INTERNAL_ERROR, 
+           virReportError(VIR_ERR_INTERNAL_ERROR,
                           _("lxctools directory '%s' does not exist"),
                           lxcpath);
            goto cleanup;
