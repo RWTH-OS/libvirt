@@ -38,6 +38,7 @@ struct lxctools_driver {
     int numOfDomains;
 };
 
+bool createTmpfs(const char* path);
 char* getContainerNameFromPath(const char* path);
 char* concatPaths(const char* path1, const char* path2);
 void lxctoolsFreeDriver(struct lxctools_driver* driver);
