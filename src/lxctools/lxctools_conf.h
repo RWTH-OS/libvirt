@@ -36,8 +36,19 @@ struct lxctools_driver {
     const char* path;
     virDomainObjListPtr domains;
     int numOfDomains;
+    struct lxctools_migrate_data* md;
 };
 
+struct lxctools_migrate_data {
+    pid_t criusrv_pid;
+    pid_t copysrv_pid;
+};
+
+bool startCopyProc(struct lxctools_migrate_data* md, const char* criu_port, const char* copy_port, const char* path, pid_t pid, const char* dconnuri);
+
+bool startCopyServer(struct lxctools_migrate_data* md, const char* criu_port, const char* copy_port, const char* path);
+
+bool waitForMigrationProcs(struct lxctools_migrate_data* md);
 bool createTmpfs(const char* path);
 char* getContainerNameFromPath(const char* path);
 char* concatPaths(const char* path1, const char* path2);
