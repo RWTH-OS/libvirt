@@ -34,6 +34,7 @@
 # define LXCTOOLS_MIGRATION_PARAMETERS                          \
     VIR_MIGRATE_PARAM_URI,              VIR_TYPED_PARAM_STRING, \
     VIR_MIGRATE_PARAM_DEST_NAME,        VIR_TYPED_PARAM_STRING, \
+    VIR_MIGRATE_PARAM_DEST_XML,         VIR_TYPED_PARAM_STRING,  /* needed for virsh */ \
     NULL
 
 # define LXCTOOLS_CRIU_PORT "1936"
