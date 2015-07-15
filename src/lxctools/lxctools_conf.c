@@ -39,17 +39,11 @@
 #include "virstring.h"
 #include "virfile.h"
 #include "lxctools_conf.h"
+#include "virlog.h"
 
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
 
-/*
-static void printUUID(const unsigned char *uuid)
-{
-    char str[VIR_UUID_STRING_BUFLEN];
-    virUUIDFormat(uuid, str);
-    printf("UUID: %s\n", str);
-
-}*/
+VIR_LOG_INIT("lxctools.lxctools_conf");
 /*
  * FIXME: DEBUG THIS!!!
  */
@@ -132,6 +126,32 @@ char* concatPaths(const char* path1, const char* path2)
 
     return ret;
 }
+
+int restoreContainer(struct lxc_container *cont)
+{
+    char *tmpfs_path = NULL;
+    int ret = -1;
+    if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
+                                  "migrate_tmpfs")) == NULL)
+        goto cleanup;
+
+    if (!cont->restore(cont, tmpfs_path, false)) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                            _("lxc api call failed. check lxc log for more information"));
+        goto cleanup;
+    }
+
+    if (!cont->is_running(cont)) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("something went wrong while restoring"));
+        goto cleanup;
+    }
+    ret = 0;
+ cleanup:
+    VIR_FREE(tmpfs_path);
+    return ret;
+}
+
 
 bool criuExists(void)
 {
@@ -312,7 +332,7 @@ static int lxctoolsRunAsync(const char** arglist, pid_t* pid)
         exit(1);
     }
     else if (child_pid < 0) {
-        //printf("failed to fork\n");
+        //failed to fork
         return -1;
     } else {
         if (pid != NULL)
@@ -336,44 +356,6 @@ static int lxctoolsRunSync(const char** arglist)
     else
         return lxctoolsWaitPID(child);
 }
-/*
-static int run_copy_proc(const char* path, const char* dconnuri, const char* copy_port)
-{
-    const char* copy_arglist[] = {"copyclient.sh", path,
-                                  dconnuri, copy_port, NULL};
-    pid_t child_pid;
-    child_pid = fork();
-    if (child_pid == 0) {
-        execvp(copy_arglist[0], (char**)copy_arglist);
-        exit(1);
-    }
-    else if (child_pid < 0) {
-        printf("failed to fork\n");
-        return -1;
-    } else {
-        int return_status;
-        waitpid(child_pid, &return_status, 0);
-        printf("return_status: %d", WEXITSTATUS(return_status));
-        return WEXITSTATUS(return_status);
-    }
-}
-
-static int run_copy_srv(const char* copy_port, const char* path)
-{
-    const char* copy_arglist[] = { "copysrv.sh", copy_port, path, NULL };
-    pid_t child_pid;
-    child_pid = fork();
-    if (child_pid == 0) {
-        execvp(copy_arglist[0], (char*const*)copy_arglist);
-        exit(1);
-    }
-    else if (child_pid < 0) {
-        printf("FAIL\n");
-        return -1;
-    } else {
-        return child_pid;
-    }
-}*/
 
 bool
 startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED, const char* criu_port, const char* copy_port, const char* path, pid_t pid, const char* dconnuri)
@@ -402,7 +384,7 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED, const char* cri
     copy_ret = lxctoolsRunSync(copy_arglist);
 
     virCommandFree(criu_cmd);
-    printf("criu: %d, copy: %d\n", criu_ret, copy_ret);
+    VIR_DEBUG("criu client finished: %d, copy client finished: %d", criu_ret, copy_ret);
     return (criu_ret == 0) && (copy_ret == 0);
 }
 
@@ -418,7 +400,9 @@ startCopyServer(struct lxctools_migrate_data* md, const char* criu_port, const c
     criu_cmd = virCommandNewArgs(criu_arglist);
     criu_ret = virCommandRunAsync(criu_cmd, &md->criusrv_pid);
     copy_ret = lxctoolsRunAsync(copy_arglist, &md->copysrv_pid);
-    printf("copysrv ret:%d\n", copy_ret);
+
+    VIR_DEBUG("criu server started asynchrously (%d), copy server started asynchrously (%d)",
+              criu_ret, copy_ret);
     virCommandFree(criu_cmd);
     return (criu_ret == 0) && (copy_ret == 0);
 }

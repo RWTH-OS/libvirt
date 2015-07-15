@@ -54,6 +54,7 @@ char* getContainerNameFromPath(const char* path);
 char* concatPaths(const char* path1, const char* path2);
 void lxctoolsFreeDriver(struct lxctools_driver* driver);
 
+int restoreContainer(struct lxc_container *cont);
 int lxctoolsLoadDomains(struct lxctools_driver *driver);
 
 unsigned long convertMemorySize(char* memory_str, unsigned int strlen);
