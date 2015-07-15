@@ -44,9 +44,7 @@
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
 
 VIR_LOG_INIT("lxctools.lxctools_conf");
-/*
- * FIXME: DEBUG THIS!!!
- */
+
 bool createTmpfs(const char* path)
 {
     bool ret;
@@ -64,9 +62,11 @@ bool createTmpfs(const char* path)
                        path);
         return false;
     }
-    printf("mounting tmpfs at '%s'\n", path);
+    VIR_DEBUG("mounting tmpfs at '%s'\n", path);
     ret = mount("tmpfs", path, "tmpfs", mountflags, "") == 0;
-    printf("errno: %d\n", errno);
+    if (!ret)
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("failed to mount tmpf: %s"), strerror(errno));
     return ret;
 }
 

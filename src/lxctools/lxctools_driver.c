@@ -35,6 +35,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <lxc/lxccontainer.h>
+#include <sys/mount.h>
 
 #include "virerror.h"
 #include "datatypes.h"
@@ -936,12 +937,12 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
                                   "migrate_tmpfs")) == NULL)
         goto cleanup;
 
-/*    if (!createTmpfs(tmpfs_path)) {
+    if (!createTmpfs(tmpfs_path)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("could not create tmpfs at '%s'"),
                        tmpfs_path);
         goto cleanup;
-    }*/
+    }
 
     if (VIR_ALLOC(driver->md) < 0)
         goto cleanup;
@@ -1035,12 +1036,12 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
                                   "migrate_tmpfs")) == NULL) {
         goto cleanup;
     }
-    /*if (!createTmpfs(tmpfs_path)) {
+    if (!createTmpfs(tmpfs_path)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("could not create tmpfs at '%s'"),
                        tmpfs_path);
         goto cleanup;
-    }*/
+    }
     VIR_DEBUG("DID NOT mounted tmpfs at: %s", tmpfs_path);
 
     if (!startCopyProc(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
@@ -1097,6 +1098,7 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     struct lxctools_driver *driver = dconn->privateData;
     virDomainObjPtr vm = NULL;
     const char* dname;
+    char *tmpfs_path = NULL;
     struct lxc_container* cont;
     virDomainPtr ret = NULL;
     virCheckFlags(0, NULL);
@@ -1125,11 +1127,16 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
         goto cleanup;
     }
     /*
-     * check if criu and copy server exited successfully
+     * wait for and check if criu and copy server exited successfully
      * restore via lxc-api
      * check if successfull & running
      * unmount tmpfs
      */
+    if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
+                                  "migrate_tmpfs")) == NULL) {
+        goto cleanup;
+    }
+
     if (cancelled) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                         _("migrating '%s' here failed on src"), dname);
@@ -1170,6 +1177,11 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     else
         ret = NULL;
  cleanup:
+    if (umount(tmpfs_path) < 0)
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("failed to umount tmpfs: %s"), strerror(errno));
+
+    VIR_FREE(tmpfs_path);
     if(vm)
         virObjectUnlock(vm);
     return ret;
@@ -1192,6 +1204,7 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
     virDomainObjPtr vm = NULL;
     struct lxc_container* cont;
     int ret = -1;
+    char *tmpfs_path;
     virCheckFlags(0, -1);
 
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
@@ -1216,6 +1229,11 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
      * probably needed for live-migration
      * unfreeze im failed, stop if success
      */
+    if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
+                                  "migrate_tmpfs")) == NULL) {
+        goto cleanup;
+    }
+
     if (cancelled) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("migration failed, restart container '%s'"), domain->name);
@@ -1230,6 +1248,11 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
 
     ret = 0;
  cleanup:
+    if (umount(tmpfs_path) < 0)
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("failed to umount tmpfs: %s"), strerror(errno));
+
+    VIR_FREE(tmpfs_path);
     if(vm)
         virObjectUnlock(vm);
     return ret;
