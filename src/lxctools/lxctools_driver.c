@@ -1042,7 +1042,7 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
                        tmpfs_path);
         goto cleanup;
     }
-    VIR_DEBUG("DID NOT mounted tmpfs at: %s", tmpfs_path);
+    VIR_DEBUG("mounted tmpfs at: %s", tmpfs_path);
 
     if (!startCopyProc(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
         tmpfs_path, cont->init_pid(cont), uri_in)) {
@@ -1054,19 +1054,20 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
               driver->md->criusrv_pid,
               driver->md->copysrv_pid);
 
-    /* TODO: freeze instead of stop */
-    if (!cont->stop(cont)) {
+    if (cont->is_running(cont) &&
+        !cont->stop(cont)) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("lxc api call returned false while trying to stop '%s'"),
+                       domain->name);
         goto cleanup;
     }
     if (cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("something went wrong while trying to stop container '%s'"),
+                       _("container '%s', did not freeze on api call"),
                        domain->name);
         goto cleanup;
     }
-    vm->def->id = -1;
     virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF, VIR_DOMAIN_SHUTOFF_MIGRATED);
-    domain->id = -1;
 
     ret = 0;
 cleanup:
@@ -1168,6 +1169,13 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     }
 
     restoreContainer(cont);
+
+    if (!cont->is_running(cont)) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("something went wrong while trying to restore container '%s'"),
+                       dname);
+        goto cleanup;
+    }
     vm->def->id = cont->init_pid(cont);
     virDomainObjSetState(vm, VIR_DOMAIN_RUNNING, VIR_DOMAIN_RUNNING_MIGRATED);
 
@@ -1238,13 +1246,35 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("migration failed, restart container '%s'"), domain->name);
 
-        restoreContainer(cont);
+        if (!cont->is_running(cont)) {
+            restoreContainer(cont);
+        }
 
-        vm->def->id = cont->init_pid(cont);
+        if (!cont->is_running(cont)) {
+            virReportError(VIR_ERR_OPERATION_FAILED,
+                           _("container '%s' did not restore on api call"),
+                           domain->name);
+            goto cleanup;
+        }
         virDomainObjSetState(vm, VIR_DOMAIN_RUNNING, VIR_DOMAIN_RUNNING_MIGRATION_CANCELED);
+    } else if (cont->is_running(cont)) {
+        if (!cont->stop(cont)) {
+            virReportError(VIR_ERR_OPERATION_FAILED,
+                           _("lxc api returned false while trying to stop container '%s'"), domain->name);
+            goto cleanup;
+        }
+        if (cont->is_running(cont)) {
+            virReportError(VIR_ERR_OPERATION_FAILED,
+                           _("container '%s' did not stop on api call"),
+                           domain->name);
+            goto cleanup;
+        }
 
-        domain->id = vm->def->id;
+        vm->def->id = -1;
+        virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF, VIR_DOMAIN_SHUTOFF_MIGRATED);
+        domain->id = -1;
     }
+
 
     ret = 0;
  cleanup:

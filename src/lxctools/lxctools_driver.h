@@ -37,6 +37,9 @@
     VIR_MIGRATE_PARAM_DEST_XML,         VIR_TYPED_PARAM_STRING,  /* needed for virsh */ \
     NULL
 
+# define LXCTOOLS_MIGRATION_FLAGS               \
+    (VIR_MIGRATE_LIVE)
+
 # define LXCTOOLS_CRIU_PORT "1936"
 # define LXCTOOLS_COPY_PORT "1937"
 
