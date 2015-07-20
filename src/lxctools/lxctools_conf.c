@@ -373,7 +373,7 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED, const char* cri
                               NULL, "--images-dir", path,
                               "--page-server", "--address", dconnuri,
                               "--port", criu_port,
-                              "--leave-stopped", NULL};
+                              /*"--leave-stopped",*/ NULL};
     const char* copy_arglist[] = {"copyclient.sh", path,
                                   dconnuri, copy_port, NULL};
     sprintf(pid_str, "%d", pid);
