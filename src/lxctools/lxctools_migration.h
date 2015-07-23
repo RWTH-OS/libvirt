@@ -24,32 +24,30 @@
  *
  */
 
-#ifndef LXCTOOLS_CONF_H
-# define LXCTOOLS_CONF_H
+#ifndef LXCTOOLS_MIGRATION_H
+# define LXCTOOLS_MIGRATION_H
 
 # include "internal.h"
-#include <lxc/lxccontainer.h>
+#include <pthread.h>
 
 #include "domain_conf.h"
 
-struct lxctools_driver {
-    const char* path;
-    virDomainObjListPtr domains;
-    int numOfDomains;
-    struct lxctools_migrate_data* md;
+#define LXCTOOLS_LIVE_MIGRATION_ITERATIONS 1
+
+
+struct lxctools_migrate_data {
+    pid_t criusrv_pid;
+    pid_t copysrv_pid;
+    pthread_t *server_thread;
 };
 
-char* getContainerNameFromPath(const char* path);
-char* concatPaths(const char* path1, const char* path2);
-void lxctoolsFreeDriver(struct lxctools_driver* driver);
+bool startCopyProc(struct lxctools_migrate_data* md, const char* criu_port, const char* copy_port, const char* path, pid_t pid, const char* dconnuri, bool live);
 
-int lxctoolsLoadDomains(struct lxctools_driver *driver);
+bool startCopyServer(struct lxctools_migrate_data* md, const char* criu_port, const char* copy_port, const char* path, bool live);
 
-unsigned long convertMemorySize(char* memory_str, unsigned int strlen);
+bool waitForMigrationProcs(struct lxctools_migrate_data* md);
+bool createTmpfs(const char* path);
 
-unsigned int getNumOfHostCPUs(virConnectPtr conn);
-unsigned long getHostMemory(virConnectPtr conn);
-bool criuExists(void);
-virDomainState lxcState2virState(const char* state);
+int restoreContainer(struct lxc_container *cont);
 
-#endif /* LXCTOOLS_CONF_H */
+#endif /* LXCTOOLS_MIGRATION_H */
