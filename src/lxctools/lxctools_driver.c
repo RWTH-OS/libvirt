@@ -51,7 +51,7 @@
 #include "virstring.h"
 #include "access/viraccessapicheck.h"
 #include "lxctools_conf.h"
-
+#include "lxctools_migration.h"
 #include "lxctools_driver.h"
 
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
@@ -800,7 +800,7 @@ lxctoolsDomainMigrateBegin3Params(virDomainPtr domain,
     virDomainObjPtr vm = NULL;
     struct lxctools_driver *driver = domain->conn->privateData;
     char *xml = NULL;
-    virCheckFlags(0, NULL);
+    virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         return NULL;
 
@@ -855,7 +855,8 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
     int ret = -1;
     const char *uri_in = NULL;
     char *my_hostname = NULL;
-    virCheckFlags(0, -1);
+    bool live_migration = (flags & VIR_MIGRATE_LIVE);
+    virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, -1);
 
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         goto cleanup;
@@ -948,7 +949,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
         goto cleanup;
 
     if (!startCopyServer(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
-                         tmpfs_path)) {
+                         tmpfs_path, live_migration)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("error while starting migrations servers"));
         goto cleanup;
@@ -988,8 +989,9 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
     const char *uri_in = NULL;
     char* tmpfs_path = NULL;
     int ret = -1;
+    bool live_migration = (flags & VIR_MIGRATE_LIVE);
 
-    virCheckFlags(0, -1);
+    virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, -1);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         return -1;
 
@@ -1032,6 +1034,8 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
     if (VIR_ALLOC(driver->md) < 0)
         goto cleanup;
 
+    driver->md->server_thread = NULL;
+
     if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
                                   "migrate_tmpfs")) == NULL) {
         goto cleanup;
@@ -1045,7 +1049,7 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
     VIR_DEBUG("mounted tmpfs at: %s", tmpfs_path);
 
     if (!startCopyProc(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
-        tmpfs_path, cont->init_pid(cont), uri_in)) {
+        tmpfs_path, cont->init_pid(cont), uri_in, live_migration)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("could not start copy processes"));
         goto cleanup;
@@ -1102,7 +1106,8 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     char *tmpfs_path = NULL;
     struct lxc_container* cont;
     virDomainPtr ret = NULL;
-    virCheckFlags(0, NULL);
+
+    virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
 
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         goto cleanup;
@@ -1213,7 +1218,8 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
     struct lxc_container* cont;
     int ret = -1;
     char *tmpfs_path;
-    virCheckFlags(0, -1);
+
+    virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, -1);
 
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         goto cleanup;
