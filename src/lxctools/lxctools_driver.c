@@ -226,7 +226,7 @@ lxctoolsDomainSaveFlags(virDomainPtr domain, const char* to,
 
     if (!mkdir(save_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("failes to create directoryr '%s'"),
+                       _("failes to create directory '%s'"),
                        save_path);
         goto cleanup;
     }

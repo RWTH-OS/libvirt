@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 #include "viralloc.h"
 #include "vircommand.h"
@@ -149,6 +150,87 @@ startServerThread(const char** arglist)
     return true;
 }
 
+/* TODO:
+ * first pre-dump w/o --prev-images-dir
+ * following pre-dumps  and final dump with --prev-images-dir
+ * create subdir for each dump
+ * on server side create dump subdirs as well
+ */
+static bool
+doPreDump(const char* criu_port,
+          const char* path,
+          const char* pid,
+          const char* dconnuri)
+{
+    virCommandPtr criu_cmd;
+    const char* criu_arglist[] = {"criu", "pre-dump", "--tcp-established",
+                                  "--file-locks", "--link-remap",
+                                  "--force-irmap", "--manage-cgroups",
+                                  "--ext-mount-map", "auto",
+                                  "--enable-external-sharing",
+                                  "--enable-external-masters",
+                                  "--enable-fs", "hugetlbfs", "--tree",
+                                  pid, "--images-dir", path,
+                                  "--page-server", "--address", dconnuri,
+                                  "--port", criu_port, NULL};
+    int i;
+    char *predump_path;
+    char subdir[3];
+
+    for (i=0; i != LXCTOOLS_LIVE_MIGRATION_ITERATIONS; i++) {
+        sprintf(subdir, "%d", i);
+        predump_path = concatPaths(path, subdir);
+
+        if (!mkdir(predump_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
+            virReportError(VIR_ERR_OPERATION_FAILED,
+                           _("failes to create directory '%s'"),
+                           predump_path);
+                goto cleanup;
+        }
+        criu_arglist[18] = subdir;
+        criu_cmd = virCommandNewArgs(criu_arglist);
+
+        if (virCommandRun(criu_cmd, NULL) != 0) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                           _("criu pre-dump returned bad exit code"));
+                goto cleanup;
+        }
+        printf("all finished\n");
+        virCommandFree(criu_cmd);
+        VIR_FREE(predump_path);
+    }
+    return true;
+ cleanup:
+    virCommandFree(criu_cmd);
+    VIR_FREE(predump_path);
+    return false;
+}
+
+static bool
+doNormalDump(const char* criu_port,
+             const char* path,
+             const char* pid,
+             const char* dconnuri)
+{
+    int criu_ret;
+    virCommandPtr criu_cmd;
+    const char* criu_arglist[] = {"criu", "dump", "--tcp-established",
+                                  "--file-locks", "--link-remap",
+                                  "--force-irmap", "--manage-cgroups",
+                                  "--ext-mount-map", "auto",
+                                  "--enable-external-sharing",
+                                  "--enable-external-masters",
+                                  "--enable-fs", "hugetlbfs", "--tree",
+                                  pid, "--images-dir", path,
+                                  "--page-server", "--address", dconnuri,
+                                  "--port", criu_port, NULL};
+    criu_cmd = virCommandNewArgs(criu_arglist);
+    criu_ret = virCommandRun(criu_cmd, NULL);
+    virCommandFree(criu_cmd);
+
+    return (criu_ret == 0);
+}
+
 bool
 startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED,
               const char* criu_port,
@@ -159,37 +241,21 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED,
               bool live)
 {
     char pid_str[15];
-    int copy_ret, criu_ret;
-    virCommandPtr criu_cmd;
-    const char* dump = "dump";
-    const char* pre_dump = "pre-dump";
-    const char* criu_arglist[] = {"criu", dump, "--tcp-established",
-                                  "--file-locks", "--link-remap",
-                                  "--force-irmap", "--manage-cgroups",
-                                  "--ext-mount-map", "auto",
-                                  "--enable-external-sharing",
-                                  "--enable-external-masters",
-                                  "--enable-fs", "hugetlbfs", "--tree",
-                                  NULL, "--images-dir", path,
-                                  "--page-server", "--address", dconnuri,
-                                  "--port", criu_port, NULL};
+    int copy_ret;
     const char* copy_arglist[] = {"copyclient.sh", path, dconnuri,
                                   copy_port, NULL};
     sprintf(pid_str, "%d", pid);
-    criu_arglist[14] = pid_str;
 
     if (live) {
-        criu_arglist[1] = pre_dump;
-        criu_ret = startServerThread(criu_arglist);
+        if (!doPreDump(criu_port, path, pid_str, dconnuri))
+            return false;
     } else {
-        criu_cmd = virCommandNewArgs(criu_arglist);
-        criu_ret = virCommandRun(criu_cmd, NULL);
-        virCommandFree(criu_cmd);
+        if (!doNormalDump(criu_port, path, pid_str, dconnuri))
+            return false;
     }
-
     copy_ret = lxctoolsRunSync(copy_arglist);
-    VIR_DEBUG("criu client finished: %d, copy client finished: %d", criu_ret, copy_ret);
-    return (criu_ret == 0) && (copy_ret == 0);
+    VIR_DEBUG("criu client finished successfully, copy client finished: %d", copy_ret);
+    return (copy_ret == 0);
 }
 
 bool startCopyServer(struct lxctools_migrate_data* md,
@@ -201,7 +267,7 @@ bool startCopyServer(struct lxctools_migrate_data* md,
     int criu_ret = 0, copy_ret;
     virCommandPtr criu_cmd;
     const char* criu_arglist[] = {"criu", "page-server", "--images", path,
-                                  "--port", criu_port, "--auto-dedup",
+                                  "--port", criu_port,
                                   NULL};
     const char* copy_arglist[] = {"copysrv.sh", copy_port, path, NULL};
 
