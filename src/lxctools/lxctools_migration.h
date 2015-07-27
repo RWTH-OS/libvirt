@@ -48,6 +48,6 @@ bool startCopyServer(struct lxctools_migrate_data* md, const char* criu_port, co
 bool waitForMigrationProcs(struct lxctools_migrate_data* md);
 bool createTmpfs(const char* path);
 
-int restoreContainer(struct lxc_container *cont);
+int restoreContainer(struct lxc_container *cont, bool live);
 
 #endif /* LXCTOOLS_MIGRATION_H */
