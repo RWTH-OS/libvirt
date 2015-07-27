@@ -1107,6 +1107,8 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     struct lxc_container* cont;
     virDomainPtr ret = NULL;
 
+    bool live_migration = (flags & VIR_MIGRATE_LIVE);
+
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
 
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
@@ -1173,7 +1175,7 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
         goto cleanup;
     }
 
-    restoreContainer(cont);
+    restoreContainer(cont, live_migration);
 
     if (!cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
@@ -1190,10 +1192,10 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     else
         ret = NULL;
  cleanup:
-    if (umount(tmpfs_path) < 0)
+   /* if (umount(tmpfs_path) < 0)
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failed to umount tmpfs: %s"), strerror(errno));
-
+*/
     VIR_FREE(tmpfs_path);
     if(vm)
         virObjectUnlock(vm);
@@ -1218,6 +1220,8 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
     struct lxc_container* cont;
     int ret = -1;
     char *tmpfs_path;
+
+    bool live_migration = (flags & VIR_MIGRATE_LIVE);
 
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, -1);
 
@@ -1253,7 +1257,7 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
                        _("migration failed, restart container '%s'"), domain->name);
 
         if (!cont->is_running(cont)) {
-            restoreContainer(cont);
+            restoreContainer(cont, live_migration);
         }
 
         if (!cont->is_running(cont)) {
@@ -1284,10 +1288,10 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
 
     ret = 0;
  cleanup:
-    if (umount(tmpfs_path) < 0)
+/*    if (umount(tmpfs_path) < 0)
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failed to umount tmpfs: %s"), strerror(errno));
-
+*/
     VIR_FREE(tmpfs_path);
     if(vm)
         virObjectUnlock(vm);
