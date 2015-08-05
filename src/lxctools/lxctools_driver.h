@@ -1,6 +1,7 @@
 /*
  * openvz_driver.h: core driver methods for managing OpenVZ VPSs
  *
+ * Copyright (C) 2015 Niklas Eiling
  * Copyright (C) 2006, 2007 Binary Karma
  * Copyright (C) 2006 Shuveb Hussain
  * Copyright (C) 2007 Anoop Joe Cyriac
@@ -20,6 +21,7 @@
  * <http://www.gnu.org/licenses/>.
  *
  * Authors:
+ * Niklas Eiling <niklas.eiling@rwth-aachen.de>
  * Shuveb Hussain <shuveb@binarykarma.com>
  * Anoop Joe Cyriac <anoop@binarykarma.com>
  *

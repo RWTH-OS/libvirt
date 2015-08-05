@@ -1,3 +1,26 @@
+/*
+ * lxctools_migration.c: functions for migratiing lxctools domains
+ *
+ * Copyright (C) 2015 Niklas Eiling
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see
+ * <http://www.gnu.org/licenses/>.
+ *
+ * Authors:
+ * Niklas Eiling <niklas.eiling@rwth-aachen.de>
+ *
+ */
 #include <config.h>
 
 #include <stdio.h>
@@ -6,6 +29,11 @@
 #include <sys/mount.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 #include "viralloc.h"
 #include "vircommand.h"
@@ -19,6 +47,47 @@
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
 
 VIR_LOG_INIT("lxctools.lxctools_migration");
+
+static bool portIsOpen(const char* address, int port)
+{
+    struct sockaddr_in sock_addr;
+    struct hostent *server;
+    int sock;
+
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+	virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+		       _("failed to create socket"));
+	return false;
+    }
+    if ((server = gethostbyname(address)) == NULL) {
+	virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+		       _("host not found"));
+        return false;
+    }
+    bzero((char*) &sock_addr, sizeof(sock_addr));
+    sock_addr.sin_family = AF_INET;
+    bcopy((char*)server->h_addr, (char*)&sock_addr.sin_addr.s_addr,
+          server->h_length);
+    sock_addr.sin_port = htons(port);
+    if (connect(sock, (struct sockaddr*) &sock_addr, sizeof(sock_addr)) < 0) {
+	close(sock);
+	return false;
+    } else {
+	close(sock);
+        return true;
+    }
+}
+
+bool waitForPort(const char* address, int port, int trys)
+{
+    int i;
+    for(i=0; i != trys; i++) {
+        if (portIsOpen(address, port))
+            return true;
+        usleep(20*1000);
+    }
+    return false;
+}
 
 int restoreContainer(struct lxc_container *cont, bool live)
 {
@@ -203,12 +272,6 @@ startServerThread(char* path, const char* criu_port)
     return true;
 }
 
-/* TODO:
- * first pre-dump w/o --prev-images-dir
- * following pre-dumps  and final dump with --prev-images-dir
- * create subdir for each dump
- * on server side create dump subdirs as well
- */
 static bool
 doPreDump(const char* criu_port,
           const char* path,
@@ -249,12 +312,16 @@ doPreDump(const char* criu_port,
         criu_arglist[16] = predump_path;
         criu_cmd = virCommandNewArgs(criu_arglist);
 
+        if (!waitForPort(dconnuri, port, 10)) {
+            virReportError(VIR_OPERATION_FAILED, "%s",
+                           _("waiting for open port on destination failed."));
+            return false;
+        }
         if (virCommandRun(criu_cmd, NULL) != 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu pre-dump returned bad exit code"));
                 goto cleanup;
         }
-        printf("all finished\n");
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
 
@@ -308,6 +375,11 @@ doNormalDump(const char* criu_port,
         criu_arglist[22] = NULL;
 
     criu_cmd = virCommandNewArgs(criu_arglist);
+    if (!waitForPort(dconnuri, port, 10)) {
+        virReportError(VIR_OPERATION_FAILED, "%s",
+                       _("waiting for open port on destination failed."));
+        return false;
+    }
     criu_ret = virCommandRun(criu_cmd, NULL);
     virCommandFree(criu_cmd);
 
@@ -327,7 +399,6 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED,
     int copy_ret;
     const char* copy_arglist[] = {"copyclient.sh", path, dconnuri,
                                   copy_port, NULL};
-    sprintf(pid_str, "%d", pid);
     if (live) {
         char prev_path[5];
         char *dump_path = NULL;
@@ -338,7 +409,7 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED,
             VIR_FREE(dump_path);
             return false;
         }
-        usleep(200*1000);
+
         if (!doNormalDump(criu_port, dump_path, pid_str, dconnuri, prev_path)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("final dump failed."));

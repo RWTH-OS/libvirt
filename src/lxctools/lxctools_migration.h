@@ -1,10 +1,7 @@
 /*
- * lxctools_conf.h: config information for LXCTOOLS domains
+ * lxctools_migration.h: function for migrating LXCTOOLS domains
  *
- * Copyright (C) 2010 Red Hat, Inc.
- * Copyright (C) 2006, 2007 Binary Karma.
- * Copyright (C) 2006 Shuveb Hussain
- * Copyright (C) 2007 Anoop Joe Cyriac
+ * Copyright (C) 2015 Niklas Eiling
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,7 +18,7 @@
  * <http://www.gnu.org/licenses/>.
  *
  * Authors:
- *
+ * Niklas Eiling <niklas.eiling@rwth-aachen.de>
  */
 
 #ifndef LXCTOOLS_MIGRATION_H
