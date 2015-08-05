@@ -1,10 +1,7 @@
 /*
- * openvz_conf.c: config functions for managing OpenVZ VEs
+ * lxctools_conf.c: config functions for lxctools
  *
- * Copyright (C) 2010-2012, 2014 Red Hat, Inc.
- * Copyright (C) 2006, 2007 Binary Karma
- * Copyright (C) 2006 Shuveb Hussain
- * Copyright (C) 2007 Anoop Joe Cyriac
+ * Copyright (C) 2015 Niklas Eiling
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,8 +18,7 @@
  * <http://www.gnu.org/licenses/>.
  *
  * Authors:
- * Shuveb Hussain <shuveb@binarykarma.com>
- * Anoop Joe Cyriac <anoop@binarykarma.com>
+ * Niklas Eiling <niklas.eiling@rwth-aachen.de>
  *
  */
 

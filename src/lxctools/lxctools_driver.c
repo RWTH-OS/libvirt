@@ -1,6 +1,7 @@
 /*
  * lxctools_driver.c: core driver functions for managing LXCTool Containers
  *
+ * Copyright (C) 2015 Niklas Eiling
  * Copyright (C) 2010-2015 Red Hat, Inc.
  * Copyright (C) 2006, 2007 Binary Karma
  * Copyright (C) 2006 Shuveb Hussain
@@ -21,6 +22,7 @@
  * <http://www.gnu.org/licenses/>.
  *
  * Authors:
+ * Niklas Eiling <niklas.eiling@rwth-aachen.de>
  * Shuveb Hussain <shuveb@binarykarma.com>
  * Anoop Joe Cyriac <anoop@binarykarma.com>
  *
@@ -344,14 +346,6 @@ lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
                        _("domain is not in shutoff state"));
         goto cleanup;
     }
-
-    /*
-    if (!cont->start(cont, 0, NULL)) {
-        printf("errorcnt: %d\n", cont->error_num);
-        virReportError(VIR_ERR_OPERATION_ABORTED, "%s",
-                cont->error_string);
-        goto cleanup;
-    }*/
 
     if (virRun(prog, NULL) < 0) {
         virReportError(VIR_ERR_OPERATION_ABORTED, "%s",
