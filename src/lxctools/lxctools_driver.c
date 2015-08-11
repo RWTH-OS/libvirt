@@ -60,6 +60,8 @@
 
 VIR_LOG_INIT("lxctools.lxctools_driver");
 /* TODO:
+ * - fix memory leak in lxc directory
+ * - create migrate_tmpfs folder if not present
  * - add virConnectGetCapabilities
  * - add virConnectGetVersion
  * - add better errors to DomainInfo
@@ -631,7 +633,7 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
 					  unsigned int flags)
 {
     struct lxctools_driver *driver = NULL;
-    const char* lxcpath = NULL;
+    char* lxcpath = NULL;
     virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
 
     if(conn->uri == NULL) {
@@ -668,7 +670,12 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
                           conn->uri->path);
            goto cleanup;
        }
-       if (!(lxcpath = lxc_get_global_config_item("lxc.lxcpath"))) {
+       if (VIR_STRDUP(lxcpath, lxc_get_global_config_item("lxc.lxcpath")) < 0) {
+           virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                          "failed to copy global config path from lxc");
+           goto cleanup;
+       }
+       if (lxcpath == 0) {
            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                           _("could not get lxc.lxcpath config item"));
            goto cleanup;
