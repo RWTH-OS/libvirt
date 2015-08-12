@@ -637,9 +637,10 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
     virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
 
     if(conn->uri == NULL) {
-       if (!(lxcpath = lxc_get_global_config_item("lxc.lxcpath"))) {
-           virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                          _("could not get lxc.lxcpath config item"));
+       if (VIR_STRDUP(lxcpath, lxc_get_global_config_item("lxc.lxcpath")) < 0) {
+           return VIR_DRV_OPEN_DECLINED;
+       }
+       if (lxcpath == 0) {
            return VIR_DRV_OPEN_DECLINED;
        }
        if (!virFileExists(lxcpath)) {
