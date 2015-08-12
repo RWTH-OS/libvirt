@@ -85,8 +85,11 @@ bool waitForPort(const char* address, const char* port, int trys)
     int iport;
     sscanf(port, "%d", &iport);
     for(i=0; i != trys; i++) {
-        if (portIsOpen(address, iport))
+        if (portIsOpen(address, iport)) {
+            VIR_DEBUG("port %s:%s is open!", address, port);
             return true;
+        }
+        VIR_DEBUG("port %s:%s is not open. (try %d/%d)", address, port, i+1, trys);
         usleep(20*1000);
     }
     return false;
