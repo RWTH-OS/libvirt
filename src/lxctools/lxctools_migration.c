@@ -78,11 +78,14 @@ static bool portIsOpen(const char* address, int port)
     }
 }
 
-bool waitForPort(const char* address, int port, int trys)
+static
+bool waitForPort(const char* address, const char* port, int trys)
 {
     int i;
+    int iport;
+    sscanf(port, "%d", &iport);
     for(i=0; i != trys; i++) {
-        if (portIsOpen(address, port))
+        if (portIsOpen(address, iport))
             return true;
         usleep(20*1000);
     }
@@ -312,8 +315,8 @@ doPreDump(const char* criu_port,
         criu_arglist[16] = predump_path;
         criu_cmd = virCommandNewArgs(criu_arglist);
 
-        if (!waitForPort(dconnuri, port, 10)) {
-            virReportError(VIR_OPERATION_FAILED, "%s",
+        if (!waitForPort(dconnuri, criu_port, 10)) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("waiting for open port on destination failed."));
             return false;
         }
@@ -375,8 +378,8 @@ doNormalDump(const char* criu_port,
         criu_arglist[22] = NULL;
 
     criu_cmd = virCommandNewArgs(criu_arglist);
-    if (!waitForPort(dconnuri, port, 10)) {
-        virReportError(VIR_OPERATION_FAILED, "%s",
+    if (!waitForPort(dconnuri, criu_port, 10)) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("waiting for open port on destination failed."));
         return false;
     }
@@ -399,6 +402,7 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED,
     int copy_ret;
     const char* copy_arglist[] = {"copyclient.sh", path, dconnuri,
                                   copy_port, NULL};
+    sprintf(pid_str, "%d", pid);
     if (live) {
         char prev_path[5];
         char *dump_path = NULL;
