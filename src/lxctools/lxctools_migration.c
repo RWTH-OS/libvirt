@@ -318,16 +318,27 @@ doPreDump(const char* criu_port,
         criu_arglist[16] = predump_path;
         criu_cmd = virCommandNewArgs(criu_arglist);
 
-        if (!waitForPort(dconnuri, criu_port, 10)) {
+        /*if (!waitForPort(dconnuri, criu_port, 10)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("waiting for open port on destination failed."));
             return false;
         }
-        if (virCommandRun(criu_cmd, NULL) != 0) {
+	if (virCommandRun(criu_cmd, NULL) != 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu pre-dump returned bad exit code"));
                 goto cleanup;
-        }
+        }*/
+
+    	for (int i=0; i != 10; i++) {
+            criu_ret = virCommandRun(criu_cmd, NULL);
+            if (criu_ret == 0) break;
+       	    
+	    if (i==10) {
+		virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                           _("criu pre-dump did not start successfully"));
+                goto cleanup;
+ 	    }
+	}    
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
 
@@ -381,12 +392,15 @@ doNormalDump(const char* criu_port,
         criu_arglist[22] = NULL;
 
     criu_cmd = virCommandNewArgs(criu_arglist);
-    if (!waitForPort(dconnuri, criu_port, 10)) {
+/*    if (!waitForPort(dconnuri, criu_port, 10)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("waiting for open port on destination failed."));
         return false;
+    }*/
+    for(int i=0; i != 10; i++) {
+    	criu_ret = virCommandRun(criu_cmd, NULL);
+        if (criu_ret == 0) break;
     }
-    criu_ret = virCommandRun(criu_cmd, NULL);
     virCommandFree(criu_cmd);
 
     return (criu_ret == 0);
