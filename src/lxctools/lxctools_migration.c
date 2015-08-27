@@ -48,7 +48,7 @@
 
 VIR_LOG_INIT("lxctools.lxctools_migration");
 
-static bool portIsOpen(const char* address, int port)
+/*static bool portIsOpen(const char* address, int port)
 {
     struct sockaddr_in sock_addr;
     struct hostent *server;
@@ -93,7 +93,7 @@ bool waitForPort(const char* address, const char* port, int trys)
         usleep(20*1000);
     }
     return false;
-}
+}*/
 
 int restoreContainer(struct lxc_container *cont, bool live)
 {
@@ -108,6 +108,7 @@ int restoreContainer(struct lxc_container *cont, bool live)
                                   tmpfs_suffix)) == NULL)
         goto cleanup;
 
+    printf("setting config %d\n", cont->set_config_item(cont, "lxc.loglevel", "TRACE"));
     if (!cont->restore(cont, tmpfs_path, false)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                             _("lxc api call failed. check lxc log for more information"));
@@ -328,17 +329,17 @@ doPreDump(const char* criu_port,
                            _("criu pre-dump returned bad exit code"));
                 goto cleanup;
         }*/
-
-    	for (int i=0; i != 10; i++) {
+        int criu_ret;
+	for (int j=0; j != 10; j++) {
             criu_ret = virCommandRun(criu_cmd, NULL);
             if (criu_ret == 0) break;
-       	    
-	    if (i==10) {
+
+	    if (j==10) {
 		virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu pre-dump did not start successfully"));
                 goto cleanup;
- 	    }
-	}    
+	    }
+	}
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
 
