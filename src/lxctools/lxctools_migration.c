@@ -286,7 +286,7 @@ doPreDump(const char* criu_port,
           char** dump_path_ret ATTRIBUTE_UNUSED)
 {
     virCommandPtr criu_cmd;
-    const char* criu_arglist[] = {"criu", "pre-dump", "--tcp-established",
+    const char* criu_arglist[] = {"criu", "dump", "--tcp-established",
                                   "--file-locks", "--link-remap",
                                   "--force-irmap", "--manage-cgroups",
                                   "--ext-mount-map", "auto",
@@ -294,6 +294,7 @@ doPreDump(const char* criu_port,
                                   "--enable-external-masters",
                                   "--enable-fs", "hugetlbfs", "--tree",
                                   pid, "--images-dir", NULL,
+                                  "--track-mem",
                                   "--page-server", "--address", dconnuri,
                                   "--port", criu_port,
                                   NULL, NULL,
@@ -386,7 +387,7 @@ doNormalDump(const char* criu_port,
                                   "--page-server", "--address", dconnuri,
                                   "--port", criu_port,
                                   "--prev-images-dir", prev_path,
-                                  "--auto-dedup", NULL};
+                                  NULL};
     if (prev_path == NULL)
         criu_arglist[22] = NULL;
 
