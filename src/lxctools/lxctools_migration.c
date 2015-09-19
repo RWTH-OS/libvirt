@@ -446,10 +446,10 @@ gettimeofday(&post_predump, NULL);
                           _("normal dump failed."));
             return false;
         }
+    }
 #ifdef LXCTOOLS_EVALUATION
 gettimeofday(&post_criudump, NULL);
 #endif
-    }
     copy_ret = lxctoolsRunSync(copy_arglist);
 #ifdef LXCTOOLS_EVALUATION
 gettimeofday(&post_residualcopy, NULL);
