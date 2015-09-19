@@ -51,7 +51,7 @@ int restoreContainer(struct lxc_container *cont, bool live);
 
 #ifdef LXCTOOLS_EVALUATION
 #include <sys/time.h>
-struct timeval post_criudump, post_residualcopy;
+struct timeval post_criudump, post_residualcopy, post_predump;
 #endif
 
 #endif /* LXCTOOLS_MIGRATION_H */

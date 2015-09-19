@@ -429,6 +429,9 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED,
             VIR_FREE(dump_path);
             return false;
         }
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&post_predump, NULL);
+#endif
 
         if (!doNormalDump(criu_port, dump_path, pid_str, dconnuri, prev_path)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
