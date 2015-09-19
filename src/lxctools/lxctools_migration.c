@@ -108,8 +108,7 @@ int restoreContainer(struct lxc_container *cont, bool live)
                                   tmpfs_suffix)) == NULL)
         goto cleanup;
 
-    printf("setting config %d\n", cont->set_config_item(cont, "lxc.loglevel", "TRACE"));
-    if (!cont->restore(cont, tmpfs_path, false)) {
+    if (!cont->restore(cont, tmpfs_path, true)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                             _("lxc api call failed. check lxc log for more information"));
         goto cleanup;
@@ -236,7 +235,6 @@ serverThread(void* arg)
         if (lxctoolsWaitPID(pid) < 0)
             return (void*)-1;
 
-        printf("all finished\n");
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
 
@@ -445,8 +443,14 @@ startCopyProc(struct lxctools_migrate_data* md ATTRIBUTE_UNUSED,
                           _("normal dump failed."));
             return false;
         }
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&post_criudump, NULL);
+#endif
     }
     copy_ret = lxctoolsRunSync(copy_arglist);
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&post_residualcopy, NULL);
+#endif
     VIR_DEBUG("criu client finished successfully, copy client finished: %d", copy_ret);
     return (copy_ret == 0);
 }

@@ -783,7 +783,10 @@ lxctoolsNodeGetCPUMap(virConnectPtr conn ATTRIBUTE_UNUSED,
     return nodeGetCPUMap(cpumap, online, flags);
 }
 
-
+#ifdef LXCTOOLS_EVALUATION
+#include <sys/time.h>
+struct timeval start, post_setup, post_dump, post_restore, post_confirm;
+#endif
 /*
  * Src: Begin
  *      - Generate XML to pass to dst
@@ -802,6 +805,9 @@ lxctoolsDomainMigrateBegin3Params(virDomainPtr domain,
     virDomainObjPtr vm = NULL;
     struct lxctools_driver *driver = domain->conn->privateData;
     char *xml = NULL;
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&start, NULL);
+#endif
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         return NULL;
@@ -935,7 +941,6 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
      * TODO: - mkdir if  tmpfs path does not exist
      *       - handle already mounted tmpfs (probably needs no handling, remount may be a good thing (does this happen?))
      */
-
     if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
                                   "migrate_tmpfs")) == NULL)
         goto cleanup;
@@ -946,10 +951,8 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
                        tmpfs_path);
         goto cleanup;
     }
-
     if (VIR_ALLOC(driver->md) < 0)
         goto cleanup;
-
     if (!startCopyServer(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
                          tmpfs_path, live_migration)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
@@ -1037,7 +1040,6 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
         goto cleanup;
 
     driver->md->server_thread = NULL;
-
     if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
                                   "migrate_tmpfs")) == NULL) {
         goto cleanup;
@@ -1049,13 +1051,16 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
         goto cleanup;
     }
     VIR_DEBUG("mounted tmpfs at: %s", tmpfs_path);
-
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&post_setup, NULL);
+#endif
     if (!startCopyProc(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
         tmpfs_path, cont->init_pid(cont), uri_in, live_migration)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("could not start copy processes"));
         goto cleanup;
     }
+
     VIR_DEBUG("started copy processes with pids: criu: %d, copy: %d\n",
               driver->md->criusrv_pid,
               driver->md->copysrv_pid);
@@ -1076,6 +1081,9 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
     virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF, VIR_DOMAIN_SHUTOFF_MIGRATED);
 
     ret = 0;
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&post_dump, NULL);
+#endif
 cleanup:
     if(vm)
         virObjectUnlock(vm);
@@ -1110,7 +1118,6 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     virDomainPtr ret = NULL;
 
     bool live_migration = (flags & VIR_MIGRATE_LIVE);
-
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
 
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
@@ -1176,9 +1183,7 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
                        _("criu binary not found in PATH"));
         goto cleanup;
     }
-
     restoreContainer(cont, live_migration);
-
     if (!cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("something went wrong while trying to restore container '%s'"),
@@ -1194,10 +1199,10 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     else
         ret = NULL;
  cleanup:
-   /* if (umount(tmpfs_path) < 0)
+    if (umount(tmpfs_path) < 0)
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failed to umount tmpfs: %s"), strerror(errno));
-*/
+
     VIR_FREE(tmpfs_path);
     if(vm)
         virObjectUnlock(vm);
@@ -1225,6 +1230,9 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
 
     bool live_migration = (flags & VIR_MIGRATE_LIVE);
 
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&post_restore, NULL);
+#endif
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, -1);
 
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
@@ -1290,10 +1298,38 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
 
     ret = 0;
  cleanup:
-/*    if (umount(tmpfs_path) < 0)
+    if (umount(tmpfs_path) < 0)
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failed to umount tmpfs: %s"), strerror(errno));
-*/
+
+#ifdef LXCTOOLS_EVALUATION
+gettimeofday(&post_confirm, NULL);
+    struct timeval total, setup, dump, criudump, residualcopy, restore, confirm;
+    timersub(&post_confirm, &start, &total);
+    timersub(&post_setup, &start, &setup);
+    timersub(&post_dump, &post_setup, &dump);
+    timersub(&post_criudump, &post_setup, &criudump);
+    timersub(&post_residualcopy, &post_criudump, &residualcopy);
+    timersub(&post_restore, &post_dump, &restore);
+    timersub(&post_confirm, &post_restore, &confirm);
+    printf("total:%ld.%06ld ", (long int)total.tv_sec, (long int)total.tv_usec);
+    printf("setup:%ld.%06ld ", (long int)setup.tv_sec, (long int)setup.tv_usec);
+    printf("dump:%ld.%06ld ", (long int)dump.tv_sec, (long int)dump.tv_usec);
+    printf("criudump:%ld.%06ld ", (long int)criudump.tv_sec, (long int)criudump.tv_usec);
+    printf("residualcopy:%ld.%06ld ", (long int)residualcopy.tv_sec, (long int)residualcopy.tv_usec);
+    printf("restore:%ld.%06ld ", (long int)restore.tv_sec, (long int)restore.tv_usec);
+    printf("confirm:%ld.%06ld ", (long int)confirm.tv_sec, (long int)confirm.tv_usec);
+
+    FILE* file = fopen("/tmp/lxctoolseval", "a+");
+    fprintf(file, "%ld.%06ld ", (long int)total.tv_sec, (long int)total.tv_usec);
+    fprintf(file, "%ld.%06ld ", (long int)setup.tv_sec, (long int)setup.tv_usec);
+    fprintf(file, "%ld.%06ld ", (long int)dump.tv_sec, (long int)dump.tv_usec);
+    fprintf(file, "%ld.%06ld ", (long int)criudump.tv_sec, (long int)criudump.tv_usec);
+    fprintf(file, "%ld.%06ld ", (long int)residualcopy.tv_sec, (long int)residualcopy.tv_usec);
+    fprintf(file, "%ld.%06ld ", (long int)restore.tv_sec, (long int)restore.tv_usec);
+    fprintf(file, "%ld.%06ld\n", (long int)confirm.tv_sec, (long int)confirm.tv_usec);
+#endif
+
     VIR_FREE(tmpfs_path);
     if(vm)
         virObjectUnlock(vm);
