@@ -1,5 +1,5 @@
 /*
- * lxctools_driver.c: core driver functions for managing LXCTool Containers
+ * lxctools_driver.c: core driver functions for managing LXCTools Containers
  *
  * Copyright (C) 2015 Niklas Eiling
  * Copyright (C) 2010-2015 Red Hat, Inc.
@@ -61,7 +61,6 @@
 VIR_LOG_INIT("lxctools.lxctools_driver");
 /* TODO:
  * - TEST: create migrate_tmpfs folder if not present
- * - add virConnectGetVersion
  * - add better errors to DomainInfo
  * - redo start with proper api call (or at least try)
  * - write some tests
@@ -70,6 +69,12 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
  * - migrate_lock
  */
 
+static int lxctoolsConnectGetVersion(virConnectPtr conn, unsigned long *version)
+{
+    struct lxctools_driver *driver = conn->privateData;
+    *version = driver->version;
+    return 0;
+}
 
 static char *lxctoolsConnectGetCapabilities(virConnectPtr conn) {
     struct lxctools_driver *driver = conn->privateData;
@@ -1394,6 +1399,7 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .domainMigrateConfirm3Params = lxctoolsDomainMigrateConfirm3Params, /* 0.0.7 */
     .domainGetState = lxctoolsDomainGetState, /* 0.0.8 */
     .connectGetCapabilities = lxctoolsConnectGetCapabilities, /* 0.1.0 */
+    .connectGetVersion = lxctoolsConnectGetVersion, /* 0.1.0 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
