@@ -248,6 +248,10 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
     struct lxc_container** cret;
     char** names;
     virDomainXMLOptionPtr xmlopt;
+    const char* version_str = lxc_get_version();
+    if (virParseVersionString(version_str, &driver->version, true) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "version string '%s' could not be converted", version_str);
+    }
     if ((cret_len = list_all_containers(driver->path, &names, &cret)) < 0)
         goto cleanup;
 
