@@ -47,7 +47,7 @@ bool createTmpfs(const char* path);
 
 int restoreContainer(struct lxc_container *cont, bool live);
 
-#define LXCTOOLS_EVALUATION
+//#define LXCTOOLS_EVALUATION
 
 #ifdef LXCTOOLS_EVALUATION
 #include <sys/time.h>
