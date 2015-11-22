@@ -33,9 +33,10 @@ struct lxctools_driver {
     const char* path;
     virDomainObjListPtr domains;
     int numOfDomains;
+    virCapsPtr caps;
     struct lxctools_migrate_data* md;
 };
-
+virCapsPtr lxctoolsCapabilitiesInit(void);
 char* getContainerNameFromPath(const char* path);
 char* concatPaths(const char* path1, const char* path2);
 void lxctoolsFreeDriver(struct lxctools_driver* driver);

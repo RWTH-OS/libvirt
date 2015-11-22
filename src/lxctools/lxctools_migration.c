@@ -48,52 +48,6 @@
 
 VIR_LOG_INIT("lxctools.lxctools_migration");
 
-/*static bool portIsOpen(const char* address, int port)
-{
-    struct sockaddr_in sock_addr;
-    struct hostent *server;
-    int sock;
-
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-	virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-		       _("failed to create socket"));
-	return false;
-    }
-    if ((server = gethostbyname(address)) == NULL) {
-	virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-		       _("host not found"));
-        return false;
-    }
-    bzero((char*) &sock_addr, sizeof(sock_addr));
-    sock_addr.sin_family = AF_INET;
-    bcopy((char*)server->h_addr, (char*)&sock_addr.sin_addr.s_addr,
-          server->h_length);
-    sock_addr.sin_port = htons(port);
-    if (connect(sock, (struct sockaddr*) &sock_addr, sizeof(sock_addr)) < 0) {
-	close(sock);
-	return false;
-    } else {
-	close(sock);
-        return true;
-    }
-}
-
-static
-bool waitForPort(const char* address, const char* port, int trys)
-{
-    int i;
-    int iport;
-    sscanf(port, "%d", &iport);
-    for(i=0; i != trys; i++) {
-        if (portIsOpen(address, iport)) {
-            VIR_DEBUG("port %s:%s is open!", address, port);
-            return true;
-        }
-        VIR_DEBUG("port %s:%s is not open. (try %d/%d)", address, port, i+1, trys);
-        usleep(20*1000);
-    }
-    return false;
-}*/
 
 int restoreContainer(struct lxc_container *cont, bool live)
 {
@@ -197,7 +151,7 @@ static void*
 serverThread(void* arg)
 {
     struct thread_data *data = (struct thread_data*)arg;
-    virCommandPtr criu_cmd;
+    virCommandPtr criu_cmd = NULL;
     const char* criu_arglist[] = {"criu", "page-server", "--images-dir",
                                   NULL, "--port", data->criu_port,
                                   NULL, NULL, NULL,
@@ -213,7 +167,7 @@ serverThread(void* arg)
         sprintf(subdir, "%d", i);
         predump_path = concatPaths(data->path, subdir);
 
-        if (!mkdir(predump_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
+        if (mkdir(predump_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED,
                            _("failed to create directory '%s'"),
                            predump_path);
@@ -285,7 +239,7 @@ doPreDump(const char* criu_port,
           char* prev_path_ret,
           char** dump_path_ret ATTRIBUTE_UNUSED)
 {
-    virCommandPtr criu_cmd;
+    virCommandPtr criu_cmd = NULL;
     const char* criu_arglist[] = {"criu", "dump", "--tcp-established",
                                   "--file-locks", "--link-remap",
                                   "--force-irmap", "--manage-cgroups",
@@ -309,7 +263,7 @@ doPreDump(const char* criu_port,
         sprintf(subdir, "%d", i);
         predump_path = concatPaths(path, subdir);
 
-        if (!mkdir(predump_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
+        if (mkdir(predump_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED,
                            _("failes to create directory '%s'"),
                            predump_path);
@@ -354,7 +308,7 @@ doPreDump(const char* criu_port,
     sprintf(subdir, "%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS);
     *dump_path_ret = concatPaths(path, subdir);
 
-    if (!mkdir(*dump_path_ret, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
+    if (mkdir(*dump_path_ret, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failes to create directory '%s'"),
                        *dump_path_ret);

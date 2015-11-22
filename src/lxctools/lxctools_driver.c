@@ -60,9 +60,7 @@
 
 VIR_LOG_INIT("lxctools.lxctools_driver");
 /* TODO:
- * - fix memory leak in lxc directory
- * - create migrate_tmpfs folder if not present
- * - add virConnectGetCapabilities
+ * - TEST: create migrate_tmpfs folder if not present
  * - add virConnectGetVersion
  * - add better errors to DomainInfo
  * - redo start with proper api call (or at least try)
@@ -72,6 +70,15 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
  * - migrate_lock
  */
 
+
+static char *lxctoolsConnectGetCapabilities(virConnectPtr conn) {
+    struct lxctools_driver *driver = conn->privateData;
+    char *ret;
+
+    ret = virCapabilitiesFormatXML(driver->caps);
+
+    return ret;
+}
 
 /*
  * Restore uses the xml parameter as domain name, because this
@@ -228,7 +235,7 @@ lxctoolsDomainSaveFlags(virDomainPtr domain, const char* to,
         goto cleanup;
     }
 
-    if (!mkdir(save_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
+    if (mkdir(save_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failes to create directory '%s'"),
                        save_path);
@@ -709,6 +716,10 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
        goto cleanup;
     }
 
+    if (!(driver->caps = lxctoolsCapabilitiesInit())) {
+        goto cleanup;
+    }
+
     if (lxctoolsLoadDomains(driver) < 0) {
        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                       _("error while loading domains"));
@@ -945,6 +956,11 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
                                   "migrate_tmpfs")) == NULL)
         goto cleanup;
 
+    if (!virFileIsDir(tmpfs_path)) {
+        if (mkdir(tmpfs_path, S_IWUSR | S_IRUSR | S_IRGRP) < 0)
+                goto cleanup;
+    }
+
     if (!createTmpfs(tmpfs_path)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("could not create tmpfs at '%s'"),
@@ -1043,6 +1059,10 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
     if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
                                   "migrate_tmpfs")) == NULL) {
         goto cleanup;
+    }
+    if (!virFileIsDir(tmpfs_path)) {
+        if (mkdir(tmpfs_path, S_IRUSR | S_IRGRP | S_IWUSR) < 0)
+                goto cleanup;
     }
     if (!createTmpfs(tmpfs_path)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
@@ -1373,6 +1393,7 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .domainMigrateFinish3Params = lxctoolsDomainMigrateFinish3Params, /* 0.0.7 */
     .domainMigrateConfirm3Params = lxctoolsDomainMigrateConfirm3Params, /* 0.0.7 */
     .domainGetState = lxctoolsDomainGetState, /* 0.0.8 */
+    .connectGetCapabilities = lxctoolsConnectGetCapabilities, /* 0.1.0 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {

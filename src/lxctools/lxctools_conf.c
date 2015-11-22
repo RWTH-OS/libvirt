@@ -36,10 +36,51 @@
 #include "virfile.h"
 #include "lxctools_conf.h"
 #include "virlog.h"
-
+#include "nodeinfo.h"
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
 
 VIR_LOG_INIT("lxctools.lxctools_conf");
+
+virCapsPtr lxctoolsCapabilitiesInit(void)
+{
+    virCapsPtr caps;
+    virCapsGuestPtr guest;
+
+    if ((caps = virCapabilitiesNew(virArchFromHost(),
+                                   true, true)) == NULL)
+        goto no_memory;
+
+    if (nodeCapsInitNUMA(caps) < 0)
+        goto no_memory;
+
+    if (virCapabilitiesAddHostMigrateTransport(caps,
+                                               "tcp") < 0)
+        goto no_memory;
+
+    if ((guest = virCapabilitiesAddGuest(caps,
+                                         VIR_DOMAIN_OSTYPE_EXE,
+                                         caps->host.arch,
+                                         NULL,
+                                         NULL,
+                                         0,
+                                         NULL)) == NULL)
+        goto no_memory;
+
+    if (virCapabilitiesAddGuestDomain(guest,
+                                      VIR_DOMAIN_VIRT_LXCTOOLS,
+                                      NULL,
+                                      NULL,
+                                      0,
+                                      NULL) == NULL)
+        goto no_memory;
+
+    return caps;
+
+ no_memory:
+    virObjectUnref(caps);
+    return NULL;
+
+}
 
 char* getContainerNameFromPath(const char* path)
 {
