@@ -68,7 +68,50 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
  * - XML impl
  * - migrate_lock
  */
+static int
+lxctoolsDomainDefPostParse(virDomainDefPtr def,
+                           virCapsPtr caps ATTRIBUTE_UNUSED,
+                           void *opaque ATTRIBUTE_UNUSED)
+{
+    /* fill the init path */
+    if (def->os.type == VIR_DOMAIN_OSTYPE_EXE && !def->os.init) {
+        if (VIR_STRDUP(def->os.init, "/sbin/init") < 0)
+            return -1;
+    }
 
+    /* memory hotplug tunables are not supported by this driver */
+    if (virDomainDefCheckUnsupportedMemoryHotplug(def) < 0)
+        return -1;
+
+    return 0;
+}
+
+static int
+lxctoolsDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
+                                const virDomainDef *def ATTRIBUTE_UNUSED,
+                                virCapsPtr caps ATTRIBUTE_UNUSED,
+                                void *opaque ATTRIBUTE_UNUSED)
+{
+    /* forbid capabilities mode hostdev in this kind of hypervisor */
+    if (dev->type == VIR_DOMAIN_DEVICE_HOSTDEV &&
+        dev->data.hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_CAPABILITIES) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("hostdev mode 'capabilities' is not "
+                         "supported in %s"),
+                       virDomainVirtTypeToString(def->virtType));
+        return -1;
+    }
+
+    if (virDomainDeviceDefCheckUnsupportedMemoryDevice(dev) < 0)
+        return -1;
+
+    return 0;
+}
+
+virDomainDefParserConfig lxctoolsDomainDefParserConfig = {
+        .domainPostParseCallback = lxctoolsDomainDefPostParse,
+        .devicesPostParseCallback = lxctoolsDomainDeviceDefPostParse,
+};
 static int lxctoolsConnectGetVersion(virConnectPtr conn, unsigned long *version)
 {
     struct lxctools_driver *driver = conn->privateData;
@@ -721,6 +764,11 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
        goto cleanup;
     }
 
+    if (!(driver->xmlopt = virDomainXMLOptionNew(&lxctoolsDomainDefParserConfig,
+                                                 NULL, NULL))) {
+        goto cleanup;
+    }
+
     if (!(driver->caps = lxctoolsCapabilitiesInit())) {
         goto cleanup;
     }
@@ -1363,6 +1411,7 @@ gettimeofday(&post_confirm, NULL);
         virObjectUnlock(vm);
     return ret;
 }
+
 
 static virHypervisorDriver lxctoolsHypervisorDriver = {
     .name = "LXCTOOLS",

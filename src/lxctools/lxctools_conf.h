@@ -35,6 +35,7 @@ struct lxctools_driver {
     int numOfDomains;
     virCapsPtr caps;
     unsigned long version;
+    virDomainXMLOptionPtr xmlopt;
     struct lxctools_migrate_data* md;
 };
 virCapsPtr lxctoolsCapabilitiesInit(void);
