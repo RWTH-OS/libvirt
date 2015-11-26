@@ -239,6 +239,169 @@ cleanup:
     return ret;
 }
 
+/*
+ * str is callee allocated
+ */
+int lxctoolsReadConfigItem(struct lxc_container* cont, const char* item, char** str)
+{
+    int ret_len;
+    if (VIR_ALLOC_N(*str, 64) < 0)
+        goto error;
+    if (( ret_len = cont->get_config_item(cont,
+                                         item,
+                                         *str,
+                                         64) ) < 0){
+       goto error;
+    }
+    if (ret_len >= 64) {
+        if (VIR_ALLOC_N(*str, ret_len) < 0)
+            goto error;
+        if (( ret_len = cont->get_config_item(cont,
+                                             item,
+                                             *str,
+                                             ret_len) ) < 0){
+             goto error;
+        }
+    }
+    return 0;      
+ error: 
+     virReportError(VIR_ERR_OPERATION_FAILED, "error on reading config for container: '%s'", cont->error_string);
+     *str = NULL;
+     return -1;
+}
+
+unsigned short countVCPUs(const char* cpustring)
+{
+    int i = 0;
+    unsigned short cnt = 1;
+    while (cpustring[i] != '\0') {
+        if(cpustring[i++] == ',') {
+            cnt++;
+        }
+    }
+    return cnt;
+}
+
+unsigned long long memToULL(char* memory_str)
+{
+     size_t len = strlen(memory_str);
+     char size_unit = '\0';
+     unsigned long long ret;
+     if (memory_str[len-2] > '9') { //memory_str are \n\o terminated
+        size_unit = memory_str[len-2];
+        memory_str[len-2] = '\0';
+     }
+     sscanf(memory_str, "%llu", &ret);
+     switch(size_unit) {
+     case 'g':
+     case 'G': ret*=1024ull;
+     case 'm':
+     case 'M': ret*=1024ull;
+     case 'k':
+     case 'K': break;
+     default : ret/=1024ull;
+     }
+
+     return ret;
+}
+
+int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
+{
+    char* item_str = NULL;
+    virNodeInfoPtr nodeinfo = NULL;
+    if (VIR_ALLOC(nodeinfo) < 0) {
+        goto error;
+    }
+    
+    if (nodeGetInfo(nodeinfo) < 0) {
+        goto error;
+    }
+
+    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpuset.cpus", &item_str) < 0){
+        goto error;
+    }
+    if (item_str == NULL || item_str[0] == '\0' ) {
+        def->maxvcpus = nodeinfo->cpus; 
+        def->cpumask = virBitmapNew(nodeinfo->cpus);
+        virBitmapSetAll(def->cpumask);
+    } else {
+        int cpunum;
+        if ( (cpunum = virBitmapParse(item_str, '\0', &def->cpumask, nodeinfo->cpus) ) < 0) {
+            goto error;
+        }  
+        def->maxvcpus = cpunum;
+    }
+    def->vcpus = def->maxvcpus;
+   
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpu.shares", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str != NULL && item_str[0] != '\0') {
+        unsigned long shares;
+        sscanf(item_str, "%lu", &shares);
+        def->cputune.shares = shares;
+        def->cputune.sharesSpecified = true;
+    }
+
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpu.cfs_period_us", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str != NULL && item_str[0] != '\0') {
+        unsigned long long period;
+        sscanf(item_str, "%llu", &period);
+        def->cputune.period = period;
+    }
+
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpu.cfs_quota_us", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str != NULL && item_str[0] != '\0') {
+        long long quota;
+        sscanf(item_str, "%llu", &quota);
+        def->cputune.quota = quota;
+    }
+
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+
+    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.memory.limit_in_bytes", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str == NULL || item_str[0] == '\0') {
+        def->mem.max_balloon = nodeinfo->memory;
+    } else {
+        def->mem.max_balloon = memToULL(item_str); 
+    }
+    def->mem.cur_balloon = def->mem.max_balloon;
+    def->mem.max_memory = nodeinfo->memory;
+
+    VIR_FREE(item_str);
+    item_str = NULL;
+    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.memory.soft_limit_in_bytes", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str != NULL && item_str[0] != '\0') {
+        def->mem.soft_limit = memToULL(item_str);
+    }
+
+    VIR_FREE(item_str);
+    return 0;
+ error:
+    VIR_FREE(item_str);
+    VIR_FREE(nodeinfo);
+    return -1;
+}
+
 int lxctoolsLoadDomains(struct lxctools_driver *driver)
 {
     int i,flags;
@@ -261,17 +424,22 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
             goto cleanup;
 
         def->virtType = VIR_DOMAIN_VIRT_LXCTOOLS;
-        if (!cret[i]->is_running(cret[i]))
+        if (!cret[i]->is_running(cret[i])) {
             def->id = -1;
-        else
+        } else {
             def->id = cret[i]->init_pid(cret[i]);
+        }
 
-        if(virUUIDGenerate(def->uuid) < 0) {
+        if (virUUIDGenerate(def->uuid) < 0) {
            goto cleanup;
         }
 
+        def->os.type = VIR_DOMAIN_OSTYPE_EXE;
         def->name = names[i];
 
+        if (lxctoolsReadConfig(cret[i], def) < 0){
+            goto cleanup;
+        }
         //printUUID(def->uuid);
 
         flags = VIR_DOMAIN_OBJ_LIST_ADD_CHECK_LIVE;

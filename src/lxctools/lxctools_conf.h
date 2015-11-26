@@ -51,5 +51,8 @@ unsigned int getNumOfHostCPUs(virConnectPtr conn);
 unsigned long getHostMemory(virConnectPtr conn);
 bool criuExists(void);
 virDomainState lxcState2virState(const char* state);
+int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def);
+unsigned short countVCPUs(const char* cpustring);
+int lxctoolsReadConfigItem(struct lxc_container* cont, const char* item, char** str);
 
 #endif /* LXCTOOLS_CONF_H */
