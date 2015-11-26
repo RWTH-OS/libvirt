@@ -68,6 +68,31 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
  * - XML impl
  * - migrate_lock
  */
+
+static char *lxctoolsDomainGetXMLDesc(virDomainPtr dom, unsigned int flags) {
+    struct lxctools_driver *driver = dom->conn->privateData;
+    virDomainObjPtr vm;
+    char *ret = NULL;
+
+    /* Flags checked by virDomainDefFormat */
+
+    vm = virDomainObjListFindByUUID(driver->domains, dom->uuid);
+
+    if (!vm) {
+        virReportError(VIR_ERR_NO_DOMAIN, "%s",
+                       _("no domain with matching uuid"));
+        goto cleanup;
+    }
+
+    ret = virDomainDefFormat(vm->def,
+                             virDomainDefFormatConvertXMLFlags(flags));
+
+ cleanup:
+    if (vm)
+        virObjectUnlock(vm);
+    return ret;
+}
+
 static int
 lxctoolsDomainDefPostParse(virDomainDefPtr def,
                            virCapsPtr caps ATTRIBUTE_UNUSED,
@@ -1449,6 +1474,7 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .domainGetState = lxctoolsDomainGetState, /* 0.0.8 */
     .connectGetCapabilities = lxctoolsConnectGetCapabilities, /* 0.1.0 */
     .connectGetVersion = lxctoolsConnectGetVersion, /* 0.1.0 */
+    .domainGetXMLDesc = lxctoolsDomainGetXMLDesc, /* 0.1.0 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {
