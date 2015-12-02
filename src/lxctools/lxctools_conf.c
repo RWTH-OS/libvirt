@@ -395,6 +395,27 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     }
 
     VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpuset.mems", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str != NULL && item_str[0] != '\0' ) {
+        virBitmapPtr nodeset;
+        item_str[strlen(item_str)-1] = '\0';
+        if (virBitmapParse(item_str, '\0', &nodeset, nodeinfo->nodes) < 0) {
+            goto error;
+        }  
+        if (virDomainNumatuneSet(def->numa,
+                             true,
+                             VIR_DOMAIN_NUMATUNE_PLACEMENT_DEFAULT,
+                             VIR_DOMAIN_NUMATUNE_MEM_STRICT,
+                             nodeset) < 0 ) {
+            goto error;
+        }
+    }
+
+    VIR_FREE(item_str);
     return 0;
  error:
     VIR_FREE(item_str);
