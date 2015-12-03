@@ -305,6 +305,95 @@ unsigned long long memToULL(char* memory_str)
      return ret;
 }
 
+int lxctoolsReadFSConfig(struct lxc_container* cont, virDomainDefPtr def)
+{
+
+    virDomainFSDefPtr fs = NULL;
+    char* item_str = NULL;
+    size_t splitcnt;
+    char** splitlist;
+
+    if (lxctoolsReadConfigItem(cont, "lxc.rootfs", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str == NULL || item_str[0] == '\0') {
+        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", "Domain has no rootfs config-item");
+        goto error;
+    }
+    if (VIR_ALLOC(fs) < 0) {
+        goto error;
+    }
+
+    fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
+    splitlist = virStringSplitCount(item_str, ":", 3, &splitcnt);
+    
+    if (splitcnt == 1) { //Type is PATH
+        fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
+        fs->src = item_str;
+        virStringFreeList(splitlist);
+    } else {
+        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", "Domain rootfs type is currently not supported");
+        goto error;
+    }
+    if (VIR_STRDUP(fs->dst, "/") != 1)
+        goto error;
+
+ 
+    if (virDomainFSInsert(def, fs) < 0) {
+        goto error;
+    }
+    item_str = NULL;
+
+    if (lxctoolsReadConfigItem(cont, "lxc.mount.entry", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str != NULL && item_str[0] != '\0') {
+        size_t mount_cnt;
+        char** mounts = virStringSplitCount(item_str, "\n", SIZE_MAX, &mount_cnt);
+        size_t param_cnt;
+        char** params;
+        while (mount_cnt-- > 0) {
+            params = virStringSplitCount(mounts[mount_cnt], " ", 6, &param_cnt);
+            if (param_cnt != 6) {
+                virReportError(VIR_ERR_OPERATION_FAILED, "The following entry has to few parameters: '%s'", mounts[mount_cnt]);
+                goto error;
+            }
+            if (VIR_ALLOC(fs) < 0) {
+                goto error;
+            }
+            if (strcmp(params[2], "none") == 0 && strstr(params[3],"bind") != NULL) {
+                fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
+                fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
+                if (VIR_STRDUP(fs->src, params[0]) < 0) {
+                    goto error;
+                }
+                if (virAsprintf(&fs->dst, "/%s", params[1]) < 0) {
+                    goto error;
+                }
+                if (strstr(params[3], "ro") != NULL) {
+                    fs->readonly = true;
+                }
+                if (virDomainFSInsert(def, fs) < 0) {
+                    goto error;
+                }
+            }
+
+            virStringFreeList(params);
+
+        }
+        virStringFreeList(mounts);
+    }
+
+    VIR_FREE(item_str);
+
+
+    return 0;
+error:
+    VIR_FREE(fs);
+    VIR_FREE(item_str);
+    return -1;
+}
+
 int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
     char* item_str = NULL;
@@ -316,6 +405,22 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     if (nodeGetInfo(nodeinfo) < 0) {
         goto error;
     }
+
+    if (lxctoolsReadConfigItem(cont, "lxc.arch", &item_str) < 0) {
+        goto error;
+    }
+    if (item_str != NULL && item_str[0] != '\0') {
+        if (strcmp(item_str, "x86") == 0 || strcmp(item_str, "i686")  == 0) {
+            def->os.arch = VIR_ARCH_I686;
+        }
+        else if (strcmp(item_str, "x86_64") == 0 || strcmp(item_str, "amd64") == 0) {
+            def->os.arch = VIR_ARCH_X86_64;
+        } else {
+            virReportError(VIR_ERR_OPERATION_FAILED, "Unknown architecture '%s'."m item_str);
+            goto error;
+    }
+    VIR_FREE(item_str);
+    item_str = NULL;
 
     if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpuset.cpus", &item_str) < 0){
         goto error;
@@ -416,6 +521,10 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     }
 
     VIR_FREE(item_str);
+
+    if (lxctoolsReadFSConfig(cont, def) < 0)
+        goto error;
+
     return 0;
  error:
     VIR_FREE(item_str);
