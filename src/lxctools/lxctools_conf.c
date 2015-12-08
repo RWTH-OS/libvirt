@@ -305,6 +305,105 @@ unsigned long long memToULL(char* memory_str)
      return ret;
 }
 
+int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def)
+{
+    virDomainNetDefPtr net = NULL;
+    char* item_str = NULL;
+    int ret = -1;
+    size_t net_cnt;
+    char** net_types = NULL;
+    char* config_str = NULL;
+
+    if (lxctoolsReadConfigItem(cont, "lxc.network", &item_str) < 0) {
+        goto cleanup;
+    }
+    if (item_str == NULL || item_str[0] == '\0') {
+        ret = 0; //No Network config is ok.
+        goto cleanup;
+    }
+    net_types = virStringSplitCount(item_str, "\n", SIZE_MAX, &net_cnt);
+    VIR_FREE(item_str);
+    net_cnt--; //Last element is always empty
+    while (net_cnt-- > 0) {
+        if (VIR_ALLOC(net) < 0) {
+            goto cleanup;
+        }
+        if (strcmp(net_types[net_cnt], "veth") == 0) {
+            net->type = VIR_DOMAIN_NET_TYPE_BRIDGE;
+        } else {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "'%s'", "only network type veth is supported");
+            goto cleanup;
+        }
+        if (virAsprintf(&config_str, "lxc.network.%lu.hwaddr", net_cnt) < 0) {
+            goto cleanup;
+        }
+        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
+            goto cleanup;
+        }
+        if (item_str != NULL && item_str[0] != '\0') {
+            if (virMacAddrParse(item_str, &net->mac) < 0) {
+                 goto cleanup;
+            }
+        } else {
+            goto cleanup;
+        }
+        VIR_FREE(config_str);
+        config_str=NULL;
+        VIR_FREE(item_str);
+        item_str=NULL;
+
+        if (virAsprintf(&config_str, "lxc.network.%lu.link", net_cnt) < 0) {
+            goto cleanup;
+        }
+        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
+            goto cleanup;
+        }
+        if (item_str != NULL && item_str[0] != '\0') {
+            if (VIR_STRDUP(net->data.bridge.brname, item_str) < 0) {
+                goto cleanup;
+            }
+        }
+        VIR_FREE(config_str);
+        config_str=NULL;
+        VIR_FREE(item_str);
+        item_str=NULL;
+
+       if (virAsprintf(&config_str, "lxc.network.%lu.flags", net_cnt) < 0) {
+            goto cleanup;
+        }
+        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
+            goto cleanup;
+        }
+        if (item_str != NULL && item_str[0] != '\0') {
+            if (strcmp(item_str, "up") == 0) {
+                net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_UP;
+            } else {
+                net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_DOWN;
+            }
+        } else {
+            net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_DOWN;
+        }
+        VIR_FREE(config_str);
+        config_str=NULL;
+        VIR_FREE(item_str);
+        item_str=NULL;
+
+
+        if (virDomainNetInsert(def, net) < 0) {
+            goto cleanup;
+        }   
+    }
+
+
+    ret = 0;
+ cleanup:
+    virStringFreeList(net_types);
+    if (ret==-1) VIR_FREE(net);
+    VIR_FREE(item_str);
+    return ret;
+   
+}
+
 int lxctoolsReadFSConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
 
@@ -416,8 +515,9 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
         else if (strcmp(item_str, "x86_64") == 0 || strcmp(item_str, "amd64") == 0) {
             def->os.arch = VIR_ARCH_X86_64;
         } else {
-            virReportError(VIR_ERR_OPERATION_FAILED, "Unknown architecture '%s'."m item_str);
+            virReportError(VIR_ERR_OPERATION_FAILED, "Unknown architecture '%s'.", item_str);
             goto error;
+        }
     }
     VIR_FREE(item_str);
     item_str = NULL;
@@ -523,6 +623,9 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     VIR_FREE(item_str);
 
     if (lxctoolsReadFSConfig(cont, def) < 0)
+        goto error;
+
+    if (lxctoolsReadNetConfig(cont, def) < 0)
         goto error;
 
     return 0;
