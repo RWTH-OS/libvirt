@@ -635,6 +635,76 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     return -1;
 }
 
+int addToBeginning(FILE* fd, char* str)
+{
+    int ret = -1;
+    char* buffer;
+    size_t length;
+    size_t strlength = strlen(str);
+    fseek(fd, 0, SEEK_END);
+    length = ftell(fd);
+    fseek(fd, 0, SEEK_SET);
+    if (VIR_ALLOC_N(buffer, length)) {
+        goto cleanup;
+    }
+    if (read(fileno(fd), buffer, length) != length) {
+        goto cleanup;
+    }
+    fseek(fd, 0, SEEK_SET);
+    if (write(fileno(fd), str, strlength) != strlength) {
+        goto cleanup;
+    }
+    if (write(fileno(fd), buffer, length) != length) {
+        goto cleanup;
+    }
+    ret = 0;
+cleanup:
+    VIR_FREE(buffer);
+    return ret;
+}
+
+int lxctoolsReadUUID(struct lxc_container* cont, unsigned char* uuid)
+{
+    int ret = -1;
+    const char* config_path = cont->config_file_name(cont);
+    FILE* fd;
+    size_t read_len = 0;
+    char* linestr = NULL;
+    if ((fd = fopen(config_path, "r+")) == NULL) {
+        goto cleanup;
+    }
+    if (getline(&linestr, &read_len, fd) < 0) {
+        goto cleanup;
+    }
+    if (strncmp(linestr, "# UUID:", 7) != 0) {
+        char uuid_str[7+VIR_UUID_STRING_BUFLEN+1] = "# UUID:";
+        if (virUUIDGenerate(uuid) < 0) {
+           goto cleanup;
+        }
+        if (virUUIDFormat(uuid, uuid_str+7) == NULL) {
+            goto cleanup;
+        }
+        uuid_str[7+VIR_UUID_STRING_BUFLEN-1] = '\n';
+        uuid_str[7+VIR_UUID_STRING_BUFLEN] = '\0';
+        if (addToBeginning(fd, uuid_str) < 0) {
+            goto cleanup;
+        }
+        ret = 0;
+        goto cleanup;
+    }
+
+    linestr[strlen(linestr)-1] = '\0';
+    if (virUUIDParse(linestr+7, uuid) < 0) {
+        goto cleanup;
+    }
+
+    ret = 0;
+ cleanup:
+    VIR_FREE(linestr);
+    fclose(fd);
+    return ret;
+}
+
 int lxctoolsLoadDomains(struct lxctools_driver *driver)
 {
     int i,flags;
@@ -663,9 +733,14 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
             def->id = cret[i]->init_pid(cret[i]);
         }
 
-        if (virUUIDGenerate(def->uuid) < 0) {
-           goto cleanup;
+        
+        if (lxctoolsReadUUID(cret[i], def->uuid) < 0) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s", "could not parse UUID");
+        } else {
+            char uuid_str[VIR_UUID_STRING_BUFLEN];
+            printf("uuid: %s\n", virUUIDFormat(def->uuid, uuid_str));
         }
+
 
         def->os.type = VIR_DOMAIN_OSTYPE_EXE;
         def->name = names[i];
@@ -673,8 +748,6 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
         if (lxctoolsReadConfig(cret[i], def) < 0){
             goto cleanup;
         }
-        //printUUID(def->uuid);
-
         flags = VIR_DOMAIN_OBJ_LIST_ADD_CHECK_LIVE;
         if (def->id != -1)
            flags |= VIR_DOMAIN_OBJ_LIST_ADD_LIVE;
