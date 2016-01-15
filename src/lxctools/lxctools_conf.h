@@ -28,6 +28,7 @@
 #include <lxc/lxccontainer.h>
 
 #include "domain_conf.h"
+#include "lxctools_conffile.h"
 
 struct lxctools_driver {
     const char* path;
@@ -54,5 +55,7 @@ virDomainState lxcState2virState(const char* state);
 int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def);
 unsigned short countVCPUs(const char* cpustring);
 int lxctoolsReadConfigItem(struct lxc_container* cont, const char* item, char** str);
+int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def);
+int lxctoolsSetNetConfig(struct lxc_container* cont, virDomainDefPtr def);
 
 #endif /* LXCTOOLS_CONF_H */

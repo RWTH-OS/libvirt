@@ -201,6 +201,7 @@
         <value>lxc</value>
         <value>uml</value>
         <value>openvz</value>
+        <value>lxctools</value>
         <value>test</value>
         <value>vmware</value>
         <value>hyperv</value>
