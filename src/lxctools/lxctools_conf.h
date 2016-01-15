@@ -55,7 +55,8 @@ virDomainState lxcState2virState(const char* state);
 int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def);
 unsigned short countVCPUs(const char* cpustring);
 int lxctoolsReadConfigItem(struct lxc_container* cont, const char* item, char** str);
+int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def);
 int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def);
-int lxctoolsSetNetConfig(struct lxc_container* cont, virDomainDefPtr def);
+int lxctoolsSetNetConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def);
 
 #endif /* LXCTOOLS_CONF_H */
