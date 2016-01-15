@@ -307,45 +307,50 @@ unsigned long long memToULL(char* memory_str)
      return ret;
 }
 
-int lxctoolsSetNetConfig(struct lxc_container* cont, virDomainDefPtr def)
+int lxctoolsSetNetConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
 {
     int ret = -1;
     char *mac_str = NULL;
+ 
+    if (lxctoolsConffileRemoveItems(conffile, "lxc.network.") < 0)
+        goto cleanup;
+
+    if (lxctoolsConffileAddComment(conffile, "begin: generated network configuration") < 0)
+        goto cleanup;
+
     for (size_t i = 0; i != def->nnets; i++) {
-        if (def->nets[i]->type == VIR_DOMAIN_NET_TYPE_BRIDGE) {
-            if (!cont->set_config_item(cont, "lxc.network.type", "veth")) {
-                virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("failed to set lxc.network.type to veth"));
-                goto cleanup;
-            }
-        } else {
-                virReportError(VIR_ERR_NO_SUPPORT, "%s", _("only network type bridge is currently supported."));
-                goto cleanup;
+        if (def->nets[i]->type != VIR_DOMAIN_NET_TYPE_BRIDGE) {
+            virReportError(VIR_ERR_NO_SUPPORT, "%s", _("only network type bridge is currently supported."));
+            goto cleanup;
         }
+
+        if (lxctoolsConffileAddItem(conffile, "lxc.network.type", "veth") < 0) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("failed to set lxc.network.type to veth"));
+            goto cleanup;
+        }
+
         if (VIR_ALLOC_N(mac_str, VIR_MAC_STRING_BUFLEN) < 0)
             goto cleanup;
         
-        if (!cont->set_config_item(cont, 
-                                   "lxc.network.hwaddr", 
-                                   virMacAddrFormat(&def->nets[i]->mac, mac_str))) {
+        if (lxctoolsConffileAddItem(conffile, 
+                                    "lxc.network.hwaddr", 
+                                    virMacAddrFormat(&def->nets[i]->mac, mac_str)) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s", "failed to set lxc.network.hwaddr");
             goto cleanup;
         }
 
-        if (!cont->set_config_item(cont, "lxc.network.link", def->nets[i]->data.bridge.brname)) {
+        if (lxctoolsConffileAddItem(conffile, "lxc.network.link", def->nets[i]->data.bridge.brname) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s", "failed to set lxc.network.link");
             goto cleanup;
         }
 
         if (def->nets[i]->linkstate == VIR_DOMAIN_NET_INTERFACE_LINK_STATE_UP) {
-            if (!cont->set_config_item(cont, "lxc.network.flags", "up"))
+            if (lxctoolsConffileAddItem(conffile, "lxc.network.flags", "up") < 0)
                 goto cleanup;
         }
-
-        /*if (!cont->clear_config_item(cont, "lxc.rootfs")) {
-            printf("error\n");
-            goto cleanup;
-        }*/
     }
+    if (lxctoolsConffileAddComment(conffile, "end: generated network configuration") < 0)
+        goto cleanup;
     ret = 0;
  cleanup:
     VIR_FREE(mac_str);
@@ -457,7 +462,8 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     char *item_buf = NULL;
     if (lxctoolsConffileRemoveItems(conffile, "lxc.mount.entry") < 0)
         goto cleanup;
-    if (lxctoolsConffileRemoveItems(conffile, "lxc.rootfs") < 0)
+
+    if (lxctoolsConffileAddComment(conffile, "begin: generated filesystem configuration") < 0)
         goto cleanup;
 
     for (size_t i=0; i < def->nfss; i++) {
@@ -497,6 +503,10 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
             item_buf = NULL;
         }
     }
+
+    if (lxctoolsConffileAddComment(conffile, "end: generated filesystem configuration") < 0)
+        goto cleanup;
+
     if (!rootfs_set) {
         virReportError(VIR_ERR_NO_ROOT, "%s", _("missing rootfs configuration"));
         goto cleanup;
@@ -597,7 +607,116 @@ error:
     return -1;
 }
 
+int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
+{
+    int ret = -1;
+    char *item_str = NULL;
+    if (def->os.arch == VIR_ARCH_I686) {
+        if (lxctoolsConffileSetItem(conffile, "lxc.arch", "i686") < 0)
+            goto cleanup;
+    } else if (def->os.arch == VIR_ARCH_X86_64) {
+        if (lxctoolsConffileSetItem(conffile, "lxc.arch", "x86_64") < 0)
+            goto cleanup;
+    } else {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("Unknown architecture"));
+        goto cleanup;
+    }
 
+    if ((item_str = virBitmapFormat(def->cpumask)) != NULL) 
+        goto cleanup;
+
+    if (item_str[0] != '\0') {
+        if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.cpuset.cpus", item_str) < 0)
+            goto cleanup;
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.cpuset.cpus") < 0)
+            goto cleanup;
+    }
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (def->cputune.sharesSpecified) {
+        if (virAsprintf(&item_str, "%lu", def->cputune.shares) < 0)
+            goto cleanup;
+        if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.cpu.shares", item_str) < 0)
+            goto cleanup;
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.cpu.shares") < 0)
+            goto cleanup;
+    }
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (def->cputune.period != 0) {
+        if (virAsprintf(&item_str, "%llu", def->cputune.period) < 0)
+            goto cleanup;
+        if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.cpu.cfs_period_us", item_str) < 0)
+            goto cleanup;
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.cpu.cfs_period_us") < 0)
+            goto cleanup;
+    }
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (def->cputune.quota != 0) {
+        if (virAsprintf(&item_str, "%llu", def->cputune.quota) < 0)
+            goto cleanup;
+        if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.cpu.cfs_quota_us", item_str) < 0)
+            goto cleanup;
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.cpu.cfs_quota_us") < 0)
+            goto cleanup;
+    }
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (def->mem.max_balloon != def->mem.cur_balloon) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("max_balloon  and cur_balloon have to have the same value. Memory ballooning is not neccessary for containerss."));
+        goto cleanup;
+    }
+    if (def->mem.max_balloon != 0) {
+        if (virAsprintf(&item_str, "%lluk", def->mem.max_balloon) < 0)
+            goto cleanup;
+        if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.memory.limit_in_bytes", item_str) < 0)
+            goto cleanup;
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.memory.limit_in_bytes") < 0)
+            goto cleanup;
+    }
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (def->mem.soft_limit != 0) {
+        if (virAsprintf(&item_str, "%lluk", def->mem.soft_limit) < 0)
+            goto cleanup;
+        if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.memory.soft_limit_in_bytes", item_str) < 0)
+            goto cleanup;
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.memory.soft_limit_in_bytes") < 0)
+            goto cleanup;
+    }
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if ((item_str = virBitmapFormat(virDomainNumatuneGetNodeset(def->numa,NULL,0))) != NULL) 
+        goto cleanup;
+
+    if (item_str[0] != '\0') {
+        if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.cpuset.mems", item_str) < 0)
+            goto cleanup;
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.cpuset.mems") < 0)
+            goto cleanup;
+    }
+
+
+    ret = 0;
+ cleanup:
+    VIR_FREE(item_str);
+    return ret;
+
+}
 
 int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
 {

@@ -80,7 +80,7 @@ int lxctoolsConffileAppend(lxctoolsConffilePtr conffile, lxctoolsConffileEntryPt
     return 1;
 }
 
-void lxctoolsConffilePrint(lxctoolsConffilePtr conffile)
+/*void lxctoolsConffilePrint(lxctoolsConffilePtr conffile)
 {
     lxctoolsConffileEntryPtr it = conffile->first;
     while (it != NULL) {
@@ -88,7 +88,7 @@ void lxctoolsConffilePrint(lxctoolsConffilePtr conffile)
         it = it->next;
     }
 
-}
+}*/
 
 int
 lxctoolsConffileRead(lxctoolsConffilePtr conffile, const char* filename)
@@ -288,6 +288,21 @@ lxctoolsConffileAddItem(lxctoolsConffilePtr conffile,
     return lxctoolsConffileAppend(conffile, it);
 }
 
+int
+lxctoolsConffileAddComment(lxctoolsConffilePtr conffile,
+                           const char* comment)
+{
+    lxctoolsConffileEntryPtr it;
+    if (conffile == NULL || comment == NULL)
+        return -1;
+
+    if (VIR_ALLOC(it) < 0)
+        return -1;
+    if (virAsprintf(&it->line, "#(libvirt.lxctools) %s\n", comment) < 0)
+        return -1;
+    return lxctoolsConffileAppend(conffile, it);
+}
+
 /**
  * return 0 on change, 1 on add and -1 on error
  */
@@ -296,39 +311,20 @@ lxctoolsConffileSetItem(lxctoolsConffilePtr conffile,
                         const char* key,
                         const char* value)
 {
-    lxctoolsConffileEntryPtr prev_it = NULL;
-    lxctoolsConffileEntryPtr it = conffile->first;
-    size_t keylen = strlen(key);
+    lxctoolsConffileEntryPtr it;
+    size_t keylen;
+    if (conffile == 0 || key == NULL || value == NULL)
+        return -1;
+
+    it = conffile->first;
+    keylen = strlen(key);
     while (it != NULL) {
         if (strncmp(key, it->line, keylen) == 0) {
-        /* replace already present config item */
-            //delete old entry
-            if (prev_it == NULL)
-                conffile->first = it->next;
-            else
-                prev_it->next = it->next;
-            
-            if (conffile->last == it)
-                conffile->last = prev_it;
             VIR_FREE(it->line);
-            VIR_FREE(it);
-            //create new entry
-            if (VIR_ALLOC(it) < 0)
-                return -1;
             if (virAsprintf(&it->line, "%s = %s\n", key, value) < 0)
                 return -1;
-            //add entry
-            if (conffile->last == NULL && conffile->first == NULL)
-                conffile->first = it;
-            else if (conffile->last != NULL)
-                conffile->last->next = it;
-            else
-                return -1;
-            conffile->last = it;
-
             return 0;
         }
-        prev_it = it;
         it = it->next;
     }
     /* add new config item */

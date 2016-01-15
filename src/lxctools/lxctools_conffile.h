@@ -58,9 +58,13 @@ char **lxctoolsConffileGetItemlist(lxctoolsConffilePtr conffile,
                                    const char* key,
                                    size_t* tokcount);
 int lxctoolsConffileRemoveItems(lxctoolsConffilePtr,
-                            const char* key);
+                                const char* key);
 int lxctoolsConffileAddItem(lxctoolsConffilePtr conffile,
-                        const char* key,
-                        const char* value);
+                            const char* key,
+                            const char* value);
+
+/* line does not need to include "#", comment string is copied */
+int lxctoolsConffileAddComment(lxctoolsConffilePtr conffile,
+                               const char* comment); 
 //void lxctoolsConffilePrint(lxctoolsConffilePtr conffile);
 #endif /* LXCTOOLS_CONFFile_H */

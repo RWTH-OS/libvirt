@@ -1475,12 +1475,19 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
         goto cleanup;
     }
 
+    if (lxctoolsConffileRemoveItems(conffile, "#(libvirt.lxctools)") < 0)
+        goto cleanup;
+
+    if (lxctoolsSetBasicConfig(conffile, vmdef) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set basic config for container %s", vmdef->name);
+        goto cleanup;
+    }
     if (lxctoolsSetFSConfig(conffile, vmdef) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "failed to set fs config for container %s", vmdef->name);
         goto cleanup;
     }
 
-    if (lxctoolsSetNetConfig(cont, vmdef) < 0) {
+    if (lxctoolsSetNetConfig(conffile, vmdef) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "failed to set net config for container %s", vmdef->name);
         goto cleanup;
     }
