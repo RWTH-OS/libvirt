@@ -104,10 +104,6 @@ lxctoolsDomainDefPostParse(virDomainDefPtr def,
             return -1;
     }
 
-    /* memory hotplug tunables are not supported by this driver */
-    if (virDomainDefCheckUnsupportedMemoryHotplug(def) < 0)
-        return -1;
-
     return 0;
 }
 
@@ -1437,6 +1433,88 @@ gettimeofday(&post_confirm, NULL);
     return ret;
 }
 
+virDomainPtr
+lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int flags)
+{
+    struct lxctools_driver *driver =  conn->privateData;
+    virDomainDefPtr vmdef = NULL;
+    virDomainObjPtr vm = NULL;
+    virDomainPtr dom = NULL;
+    const char* config_path = NULL;
+    struct lxc_container *cont;
+    unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE;
+    lxctoolsConffilePtr conffile;
+
+    virCheckFlags(VIR_DOMAIN_DEFINE_VALIDATE, NULL);
+
+    if (flags & VIR_DOMAIN_DEFINE_VALIDATE)
+        parse_flags |= VIR_DOMAIN_DEF_PARSE_VALIDATE;
+
+    if ((vmdef = virDomainDefParseString(xml, driver->caps, driver->xmlopt,
+                                         parse_flags)) == NULL)
+        goto cleanup;
+
+    if (!(vm = virDomainObjListAdd(driver->domains, vmdef,
+                                   driver->xmlopt,
+                                   0, NULL))) {
+        goto cleanup;
+    }
+
+    if (!(cont = vm->privateData)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("inconsistent data for container '%s'"),
+                       vmdef->name);
+        goto cleanup;
+    }
+
+    if (VIR_ALLOC(conffile) < 0)
+        goto cleanup;
+
+    if (lxctoolsConffileRead(conffile, cont->config_file_name(cont)) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", _("failed to read conffile"));
+        goto cleanup;
+    }
+
+    if (lxctoolsSetFSConfig(conffile, vmdef) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set fs config for container %s", vmdef->name);
+        goto cleanup;
+    }
+
+    if (lxctoolsSetNetConfig(cont, vmdef) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set net config for container %s", vmdef->name);
+        goto cleanup;
+    }
+
+    if ((config_path = cont->config_file_name(cont)) == NULL) {
+        goto cleanup;
+    }
+
+    //if (!cont->save_config(cont, config_path)) {
+    if (!cont->save_config(cont, "/root/config.beta")) {
+        goto cleanup;
+    }
+    if (lxctoolsConffileWrite(conffile, "/root/config.gamma") < 0)
+        goto cleanup;
+    vmdef = NULL;
+    vm->persistent = 1;
+
+    dom = virGetDomain(conn, vm->def->name, vm->def->uuid);
+    if (dom)
+        dom->id = -1;
+
+ cleanup:
+    lxctoolsConffileFree(conffile);
+    virDomainDefFree(vmdef);
+    if (vm)
+        virObjectUnlock(vm);
+    return dom;
+}
+
+virDomainPtr
+lxctoolsDomainDefineXML(virConnectPtr conn, const char* xml)
+{
+    return lxctoolsDomainDefineXMLFlags(conn, xml, 0);
+}
 
 static virHypervisorDriver lxctoolsHypervisorDriver = {
     .name = "LXCTOOLS",
@@ -1475,6 +1553,8 @@ static virHypervisorDriver lxctoolsHypervisorDriver = {
     .connectGetCapabilities = lxctoolsConnectGetCapabilities, /* 0.1.0 */
     .connectGetVersion = lxctoolsConnectGetVersion, /* 0.1.0 */
     .domainGetXMLDesc = lxctoolsDomainGetXMLDesc, /* 0.1.0 */
+    .domainDefineXML = lxctoolsDomainDefineXML, /* 0.1.1 */
+    .domainDefineXMLFlags = lxctoolsDomainDefineXMLFlags, /* 0.1.1 */
 };
 
 static virConnectDriver lxctoolsConnectDriver = {

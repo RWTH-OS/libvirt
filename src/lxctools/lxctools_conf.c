@@ -37,6 +37,8 @@
 #include "lxctools_conf.h"
 #include "virlog.h"
 #include "nodeinfo.h"
+
+
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
 
 VIR_LOG_INIT("lxctools.lxctools_conf");
@@ -305,6 +307,51 @@ unsigned long long memToULL(char* memory_str)
      return ret;
 }
 
+int lxctoolsSetNetConfig(struct lxc_container* cont, virDomainDefPtr def)
+{
+    int ret = -1;
+    char *mac_str = NULL;
+    for (size_t i = 0; i != def->nnets; i++) {
+        if (def->nets[i]->type == VIR_DOMAIN_NET_TYPE_BRIDGE) {
+            if (!cont->set_config_item(cont, "lxc.network.type", "veth")) {
+                virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("failed to set lxc.network.type to veth"));
+                goto cleanup;
+            }
+        } else {
+                virReportError(VIR_ERR_NO_SUPPORT, "%s", _("only network type bridge is currently supported."));
+                goto cleanup;
+        }
+        if (VIR_ALLOC_N(mac_str, VIR_MAC_STRING_BUFLEN) < 0)
+            goto cleanup;
+        
+        if (!cont->set_config_item(cont, 
+                                   "lxc.network.hwaddr", 
+                                   virMacAddrFormat(&def->nets[i]->mac, mac_str))) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s", "failed to set lxc.network.hwaddr");
+            goto cleanup;
+        }
+
+        if (!cont->set_config_item(cont, "lxc.network.link", def->nets[i]->data.bridge.brname)) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s", "failed to set lxc.network.link");
+            goto cleanup;
+        }
+
+        if (def->nets[i]->linkstate == VIR_DOMAIN_NET_INTERFACE_LINK_STATE_UP) {
+            if (!cont->set_config_item(cont, "lxc.network.flags", "up"))
+                goto cleanup;
+        }
+
+        /*if (!cont->clear_config_item(cont, "lxc.rootfs")) {
+            printf("error\n");
+            goto cleanup;
+        }*/
+    }
+    ret = 0;
+ cleanup:
+    VIR_FREE(mac_str);
+    return ret;
+}
+
 int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
     virDomainNetDefPtr net = NULL;
@@ -368,7 +415,7 @@ int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def)
         VIR_FREE(item_str);
         item_str=NULL;
 
-       if (virAsprintf(&config_str, "lxc.network.%lu.flags", net_cnt) < 0) {
+        if (virAsprintf(&config_str, "lxc.network.%lu.flags", net_cnt) < 0) {
             goto cleanup;
         }
         if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
@@ -400,9 +447,66 @@ int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def)
     virStringFreeList(net_types);
     if (ret==-1) VIR_FREE(net);
     VIR_FREE(item_str);
-    return ret;
-   
+    return ret;   
 }
+
+int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
+{
+    int ret = -1;
+    bool rootfs_set = false;
+    char *item_buf = NULL;
+    if (lxctoolsConffileRemoveItems(conffile, "lxc.mount.entry") < 0)
+        goto cleanup;
+    if (lxctoolsConffileRemoveItems(conffile, "lxc.rootfs") < 0)
+        goto cleanup;
+
+    for (size_t i=0; i < def->nfss; i++) {
+        if (def->fss[i]->type != VIR_DOMAIN_FS_TYPE_MOUNT) {
+            virReportError(VIR_ERR_NO_SUPPORT, "%s", 
+                           _("only fs type 'mount' is currently supported"));
+            continue;
+        }
+        
+        if (def->fss[i]->fsdriver != VIR_DOMAIN_FS_DRIVER_TYPE_PATH &&
+               def->fss[i]->fsdriver != VIR_DOMAIN_FS_DRIVER_TYPE_DEFAULT) {
+            virReportError(VIR_ERR_NO_SUPPORT, "%s",
+                               _("only fs driver type 'path' is currently supported"));
+            continue;
+        }
+        
+        if (strcmp(def->fss[i]->dst, "/") == 0) {
+            if (lxctoolsConffileSetItem(conffile, "lxc.rootfs", def->fss[i]->src) < 0) {
+                virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("could not set rootfs"));
+                goto cleanup;
+            }
+            rootfs_set = true;
+        } else {
+            if (def->fss[i]->dst[0] != '/') {
+                virReportError(VIR_ERR_OPERATION_FAILED, "Destination '%s' does not contain a leading '/'", def->fss[i]->dst);
+                goto cleanup;
+            }
+            
+            if (virAsprintf(&item_buf,
+                            "%s %s none bind,create=dir 0 0",
+                            def->fss[i]->src, def->fss[i]->dst+1) < 0) {
+                goto cleanup;
+            }
+            if (lxctoolsConffileAddItem(conffile, "lxc.mount.entry", item_buf) < 0)
+                goto cleanup;
+            VIR_FREE(item_buf);
+            item_buf = NULL;
+        }
+    }
+    if (!rootfs_set) {
+        virReportError(VIR_ERR_NO_ROOT, "%s", _("missing rootfs configuration"));
+        goto cleanup;
+    }
+    ret = 0;
+ cleanup:
+    VIR_FREE(item_buf);
+    return ret;
+}
+
 
 int lxctoolsReadFSConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
@@ -492,6 +596,8 @@ error:
     VIR_FREE(item_str);
     return -1;
 }
+
+
 
 int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
@@ -589,6 +695,7 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     }
     def->mem.cur_balloon = def->mem.max_balloon;
     def->mem.max_memory = nodeinfo->memory;
+    def->mem.memory_slots = 1; //maybe delete max_memory alltogether
 
     VIR_FREE(item_str);
     item_str = NULL;
@@ -705,6 +812,7 @@ int lxctoolsReadUUID(struct lxc_container* cont, unsigned char* uuid)
     return ret;
 }
 
+
 int lxctoolsLoadDomains(struct lxctools_driver *driver)
 {
     int i,flags;
@@ -736,10 +844,8 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
         
         if (lxctoolsReadUUID(cret[i], def->uuid) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s", "could not parse UUID");
-        } else {
-            char uuid_str[VIR_UUID_STRING_BUFLEN];
-            printf("uuid: %s\n", virUUIDFormat(def->uuid, uuid_str));
-        }
+            goto cleanup;
+        } 
 
 
         def->os.type = VIR_DOMAIN_OSTYPE_EXE;
