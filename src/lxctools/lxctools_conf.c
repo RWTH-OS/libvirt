@@ -289,9 +289,9 @@ unsigned long long memToULL(char* memory_str)
      size_t len = strlen(memory_str);
      char size_unit = '\0';
      unsigned long long ret;
-     if (memory_str[len-2] > '9') { //memory_str are \n\o terminated
-        size_unit = memory_str[len-2];
-        memory_str[len-2] = '\0';
+     if (memory_str[len-1] > '9') { //memory_str are \n\o terminated
+        size_unit = memory_str[len-1];
+        memory_str[len-1] = '\0';
      }
      sscanf(memory_str, "%llu", &ret);
      switch(size_unit) {
@@ -518,18 +518,18 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
 }
 
 
-int lxctoolsReadFSConfig(struct lxc_container* cont, virDomainDefPtr def)
+int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
 {
 
     virDomainFSDefPtr fs = NULL;
     char* item_str = NULL;
     size_t splitcnt;
-    char** splitlist;
+    char** splitlist = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.rootfs", &item_str) < 0) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs")) == NULL) {
         goto error;
     }
-    if (item_str == NULL || item_str[0] == '\0') {
+    if (item_str[0] == '\0') {
         virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", "Domain has no rootfs config-item");
         goto error;
     }
@@ -556,19 +556,18 @@ int lxctoolsReadFSConfig(struct lxc_container* cont, virDomainDefPtr def)
         goto error;
     }
     item_str = NULL;
+    splitlist = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.mount.entry", &item_str) < 0) {
+    if ((splitlist = lxctoolsConffileGetItemlist(conffile, "lxc.mount.entry", &splitcnt)) == NULL) {
         goto error;
     }
-    if (item_str != NULL && item_str[0] != '\0') {
-        size_t mount_cnt;
-        char** mounts = virStringSplitCount(item_str, "\n", SIZE_MAX, &mount_cnt);
+    if (splitlist[0] != NULL) {
         size_t param_cnt;
         char** params;
-        while (mount_cnt-- > 0) {
-            params = virStringSplitCount(mounts[mount_cnt], " ", 6, &param_cnt);
+        while (splitcnt-- > 0) {
+            params = virStringSplitCount(splitlist[splitcnt], " ", 6, &param_cnt);
             if (param_cnt != 6) {
-                virReportError(VIR_ERR_OPERATION_FAILED, "The following entry has to few parameters: '%s'", mounts[mount_cnt]);
+                virReportError(VIR_ERR_OPERATION_FAILED, "The following entry has to few parameters: '%s'", splitlist[splitcnt]);
                 goto error;
             }
             if (VIR_ALLOC(fs) < 0) {
@@ -594,7 +593,8 @@ int lxctoolsReadFSConfig(struct lxc_container* cont, virDomainDefPtr def)
             virStringFreeList(params);
 
         }
-        virStringFreeList(mounts);
+        virStringFreeList(splitlist);
+        splitlist = NULL;
     }
 
     VIR_FREE(item_str);
@@ -602,9 +602,33 @@ int lxctoolsReadFSConfig(struct lxc_container* cont, virDomainDefPtr def)
 
     return 0;
 error:
+    virStringFreeList(splitlist);
     VIR_FREE(fs);
     VIR_FREE(item_str);
     return -1;
+}
+
+int lxctoolsCheckStaticConfig(virDomainDefPtr def)
+{
+    virNodeInfoPtr nodeinfo = NULL;
+    if (VIR_ALLOC(nodeinfo) < 0) {
+        return -1;
+    }
+    
+    if (nodeGetInfo(nodeinfo) < 0) {
+        return -1;
+    }
+
+    if (def->mem.max_memory != nodeinfo->memory) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("setting max_memory is unssuported"));
+        return -1;
+    }
+
+    if (virBitmapLastSetBit(def->cpumask) >= nodeinfo->cpus) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("to many cpus set in cpuset"));
+        return -1;
+    }
+    return 0;
 }
 
 int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
@@ -622,7 +646,7 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
         goto cleanup;
     }
 
-    if ((item_str = virBitmapFormat(def->cpumask)) != NULL) 
+    if ((item_str = virBitmapFormat(def->cpumask)) == NULL) 
         goto cleanup;
 
     if (item_str[0] != '\0') {
@@ -687,7 +711,7 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if (def->mem.soft_limit != 0) {
+    if (def->mem.soft_limit != 0 && def->mem.soft_limit < def->mem.cur_balloon) {
         if (virAsprintf(&item_str, "%lluk", def->mem.soft_limit) < 0)
             goto cleanup;
         if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.memory.soft_limit_in_bytes", item_str) < 0)
@@ -699,7 +723,7 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if ((item_str = virBitmapFormat(virDomainNumatuneGetNodeset(def->numa,NULL,0))) != NULL) 
+    if ((item_str = virBitmapFormat(virDomainNumatuneGetNodeset(def->numa,NULL,0))) == NULL) 
         goto cleanup;
 
     if (item_str[0] != '\0') {
@@ -709,7 +733,6 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
         if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.cpuset.mems") < 0)
             goto cleanup;
     }
-
 
     ret = 0;
  cleanup:
@@ -722,6 +745,8 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
     char* item_str = NULL;
     virNodeInfoPtr nodeinfo = NULL;
+    lxctoolsConffilePtr conffile = NULL;
+
     if (VIR_ALLOC(nodeinfo) < 0) {
         goto error;
     }
@@ -729,11 +754,18 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     if (nodeGetInfo(nodeinfo) < 0) {
         goto error;
     }
+    
+    if (VIR_ALLOC(conffile) < 0)
+        goto error;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.arch", &item_str) < 0) {
+    if (lxctoolsConffileRead(conffile, cont->config_file_name(cont)) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", _("failed to read conffile"));
         goto error;
     }
-    if (item_str != NULL && item_str[0] != '\0') {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.arch")) == NULL) {
+        goto error;
+    }
+    if (item_str[0] != '\0') {
         if (strcmp(item_str, "x86") == 0 || strcmp(item_str, "i686")  == 0) {
             def->os.arch = VIR_ARCH_I686;
         }
@@ -747,10 +779,10 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpuset.cpus", &item_str) < 0){
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.cgroup.cpuset.cpus")) == NULL){
         goto error;
     }
-    if (item_str == NULL || item_str[0] == '\0' ) {
+    if (item_str[0] == '\0') {
         def->maxvcpus = nodeinfo->cpus; 
         def->cpumask = virBitmapNew(nodeinfo->cpus);
         virBitmapSetAll(def->cpumask);
@@ -766,10 +798,10 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpu.shares", &item_str) < 0) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.cgroup.cpu.shares")) == NULL) {
         goto error;
     }
-    if (item_str != NULL && item_str[0] != '\0') {
+    if (item_str[0] != '\0') {
         unsigned long shares;
         sscanf(item_str, "%lu", &shares);
         def->cputune.shares = shares;
@@ -779,10 +811,10 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpu.cfs_period_us", &item_str) < 0) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.cgroup.cpu.cfs_period_us")) == NULL) {
         goto error;
     }
-    if (item_str != NULL && item_str[0] != '\0') {
+    if (item_str[0] != '\0') {
         unsigned long long period;
         sscanf(item_str, "%llu", &period);
         def->cputune.period = period;
@@ -791,10 +823,10 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpu.cfs_quota_us", &item_str) < 0) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.cgroup.cpu.cfs_quota_us")) == NULL) {
         goto error;
     }
-    if (item_str != NULL && item_str[0] != '\0') {
+    if (item_str[0] != '\0') {
         long long quota;
         sscanf(item_str, "%llu", &quota);
         def->cputune.quota = quota;
@@ -804,10 +836,10 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     item_str = NULL;
 
 
-    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.memory.limit_in_bytes", &item_str) < 0) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.cgroup.memory.limit_in_bytes")) == NULL) {
         goto error;
     }
-    if (item_str == NULL || item_str[0] == '\0') {
+    if (item_str[0] == '\0') {
         def->mem.max_balloon = nodeinfo->memory;
     } else {
         def->mem.max_balloon = memToULL(item_str); 
@@ -818,22 +850,21 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
 
     VIR_FREE(item_str);
     item_str = NULL;
-    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.memory.soft_limit_in_bytes", &item_str) < 0) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.cgroup.memory.soft_limit_in_bytes")) == NULL) {
         goto error;
     }
-    if (item_str != NULL && item_str[0] != '\0') {
+    if (item_str[0] != '\0') {
         def->mem.soft_limit = memToULL(item_str);
     }
 
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.cgroup.cpuset.mems", &item_str) < 0) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.cgroup.cpuset.mems")) == NULL) {
         goto error;
     }
-    if (item_str != NULL && item_str[0] != '\0' ) {
+    if (item_str[0] != '\0') {
         virBitmapPtr nodeset;
-        item_str[strlen(item_str)-1] = '\0';
         if (virBitmapParse(item_str, '\0', &nodeset, nodeinfo->nodes) < 0) {
             goto error;
         }  
@@ -847,8 +878,7 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     }
 
     VIR_FREE(item_str);
-
-    if (lxctoolsReadFSConfig(cont, def) < 0)
+    if (lxctoolsReadFSConfig(conffile, def) < 0)
         goto error;
 
     if (lxctoolsReadNetConfig(cont, def) < 0)
@@ -876,6 +906,7 @@ int addToBeginning(FILE* fd, char* str)
     if (read(fileno(fd), buffer, length) != length) {
         goto cleanup;
     }
+    
     fseek(fd, 0, SEEK_SET);
     if (write(fileno(fd), str, strlength) != strlength) {
         goto cleanup;

@@ -159,6 +159,7 @@ lxctoolsConffileWrite(lxctoolsConffilePtr conffile, const char* filename)
 
 /**
  * return value is callee allocated and must be freed
+ * return NULL on error and an empty string on not found
  */
 char *lxctoolsConffileGetItem(lxctoolsConffilePtr conffile,
                               const char* key)
@@ -173,6 +174,7 @@ char *lxctoolsConffileGetItem(lxctoolsConffilePtr conffile,
             virSkipSpaces((const char**)&value);
             if (value[0] != '=')
                 return NULL;
+            value++;
             virSkipSpaces((const char**)&value);
             if (VIR_STRNDUP(ret, value, strlen(value)-1) < 0)
                 return NULL;
@@ -181,7 +183,10 @@ char *lxctoolsConffileGetItem(lxctoolsConffilePtr conffile,
         }
         it = it->next;
     }
-    return NULL;
+    if (VIR_ALLOC(ret) < 0)
+        return NULL;
+    ret[0] = '\0';
+    return ret;
 }
 
 /**
@@ -205,6 +210,7 @@ char **lxctoolsConffileGetItemlist(lxctoolsConffilePtr conffile,
             virSkipSpaces((const char**)&value);
             if (value[0] != '=')
                 continue;
+            value++;
             virSkipSpaces((const char**)&value);
 
             if (VIR_RESIZE_N(tokens, maxtokens, ntokens, 1) < 0)

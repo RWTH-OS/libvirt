@@ -1443,7 +1443,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
     const char* config_path = NULL;
     struct lxc_container *cont;
     unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE;
-    lxctoolsConffilePtr conffile;
+    lxctoolsConffilePtr conffile = NULL;
 
     virCheckFlags(VIR_DOMAIN_DEFINE_VALIDATE, NULL);
 
@@ -1454,6 +1454,9 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
                                          parse_flags)) == NULL)
         goto cleanup;
 
+    if (lxctoolsCheckStaticConfig(vmdef) < 0) {
+        goto cleanup;
+    }
     if (!(vm = virDomainObjListAdd(driver->domains, vmdef,
                                    driver->xmlopt,
                                    0, NULL))) {
@@ -1496,11 +1499,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
         goto cleanup;
     }
 
-    //if (!cont->save_config(cont, config_path)) {
-    if (!cont->save_config(cont, "/root/config.beta")) {
-        goto cleanup;
-    }
-    if (lxctoolsConffileWrite(conffile, "/root/config.gamma") < 0)
+    if (lxctoolsConffileWrite(conffile, config_path) < 0)
         goto cleanup;
     vmdef = NULL;
     vm->persistent = 1;
