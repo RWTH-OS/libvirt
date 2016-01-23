@@ -58,5 +58,6 @@ int lxctoolsReadConfigItem(struct lxc_container* cont, const char* item, char** 
 int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def);
 int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def);
 int lxctoolsSetNetConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def);
+int lxctoolsCheckStaticConfig(virDomainDefPtr def);
 
 #endif /* LXCTOOLS_CONF_H */
