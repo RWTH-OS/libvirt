@@ -1474,7 +1474,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
         goto cleanup;
 
     if (lxctoolsConffileRead(conffile, cont->config_file_name(cont)) < 0) {
-        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", _("failed to read conffile"));
+//        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", _("failed to read conffile"));
         goto cleanup;
     }
 
@@ -1482,16 +1482,16 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
         goto cleanup;
 
     if (lxctoolsSetBasicConfig(conffile, vmdef) < 0) {
-        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set basic config for container %s", vmdef->name);
+//        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set basic config for container %s", vmdef->name);
         goto cleanup;
     }
     if (lxctoolsSetFSConfig(conffile, vmdef) < 0) {
-        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set fs config for container %s", vmdef->name);
+//        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set fs config for container %s", vmdef->name);
         goto cleanup;
     }
 
     if (lxctoolsSetNetConfig(conffile, vmdef) < 0) {
-        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set net config for container %s", vmdef->name);
+//        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set net config for container %s", vmdef->name);
         goto cleanup;
     }
 

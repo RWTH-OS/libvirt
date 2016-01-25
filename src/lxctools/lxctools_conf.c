@@ -628,6 +628,7 @@ int lxctoolsCheckStaticConfig(virDomainDefPtr def)
         virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("to many cpus set in cpuset"));
         return -1;
     }
+    
     return 0;
 }
 
@@ -732,6 +733,37 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     } else {
         if (lxctoolsConffileRemoveItems(conffile, "lxc.cgroup.cpuset.mems") < 0)
             goto cleanup;
+    }
+
+    VIR_FREE(item_str);
+    item_str = NULL;
+
+    if (def->metadata != NULL) {
+        xmlNodePtr node = def->metadata->children;
+        while (node != NULL) {
+            if (xmlStrcmp(node->children->name, (const xmlChar*)"lxctools:include")) 
+                break;
+            node = node->next;
+        }
+        if (node == NULL) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", "found metadata, but no known child element");
+            if (lxctoolsConffileRemoveItems(conffile, "lxc.include") < 0)
+                 goto cleanup;
+
+        } else {
+            if (node->children != NULL && node->children->type == XML_TEXT_NODE) {
+                if (lxctoolsConffileSetItem(conffile, "lxc.include", (const char*)node->children->content) < 0)
+                    goto cleanup;
+            } else {
+                virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", "found include node but no child text node");
+                if (lxctoolsConffileRemoveItems(conffile, "lxc.include") < 0)
+                    goto cleanup;
+
+            }
+        }
+    } else {
+        if (lxctoolsConffileRemoveItems(conffile, "lxc.include") < 0)
+                goto cleanup;
     }
 
     ret = 0;
@@ -878,6 +910,20 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     }
 
     VIR_FREE(item_str);
+    item_str = NULL;
+
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.include")) == NULL) {
+        goto error;
+    }
+
+    //lxc.include is optional!
+    if (item_str[0] != '\0') {
+        def->metadata = xmlNewNode(NULL, (const xmlChar*) "metadata");
+        xmlNewTextChild(def->metadata, NULL, (const xmlChar*) (const xmlChar*)"lxctools:include", (const xmlChar*)item_str);
+    }
+
+    VIR_FREE(item_str);
+    item_str = NULL;
     if (lxctoolsReadFSConfig(conffile, def) < 0)
         goto error;
 
