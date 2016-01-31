@@ -22,6 +22,7 @@
  *
  */
 
+/*TODO: implement runtime config manipulation */
 #include <config.h>
 
 #include <stdio.h>

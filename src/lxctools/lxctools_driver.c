@@ -64,8 +64,6 @@ VIR_LOG_INIT("lxctools.lxctools_driver");
  * - add better errors to DomainInfo
  * - redo start with proper api call (or at least try)
  * - write some tests
- * - create, delete
- * - XML impl
  * - migrate_lock
  */
 
