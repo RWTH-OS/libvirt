@@ -1431,7 +1431,7 @@ gettimeofday(&post_confirm, NULL);
     return ret;
 }
 
-virDomainPtr
+static virDomainPtr
 lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int flags)
 {
     struct lxctools_driver *driver =  conn->privateData;
@@ -1514,7 +1514,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
     return dom;
 }
 
-virDomainPtr
+static virDomainPtr
 lxctoolsDomainDefineXML(virConnectPtr conn, const char* xml)
 {
     return lxctoolsDomainDefineXMLFlags(conn, xml, 0);
