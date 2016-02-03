@@ -285,7 +285,7 @@ unsigned short countVCPUs(const char* cpustring)
     return cnt;
 }
 
-unsigned long long memToULL(char* memory_str)
+static unsigned long long memToULL(char* memory_str)
 {
      size_t len = strlen(memory_str);
      char size_unit = '\0';
@@ -358,7 +358,7 @@ int lxctoolsSetNetConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     return ret;
 }
 
-int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def)
+static int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
     virDomainNetDefPtr net = NULL;
     char* item_str = NULL;
@@ -518,8 +518,7 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     return ret;
 }
 
-
-int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
+static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
 {
 
     virDomainFSDefPtr fs = NULL;
@@ -938,7 +937,7 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     return -1;
 }
 
-int addToBeginning(FILE* fd, char* str)
+static int addToBeginning(FILE* fd, char* str)
 {
     int ret = -1;
     char* buffer;
@@ -967,7 +966,7 @@ cleanup:
     return ret;
 }
 
-int lxctoolsReadUUID(struct lxc_container* cont, unsigned char* uuid)
+static int lxctoolsReadUUID(struct lxc_container* cont, unsigned char* uuid)
 {
     int ret = -1;
     const char* config_path = cont->config_file_name(cont);
