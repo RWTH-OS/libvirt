@@ -93,7 +93,7 @@ int lxctoolsConffileAppend(lxctoolsConffilePtr conffile, lxctoolsConffileEntryPt
 int
 lxctoolsConffileRead(lxctoolsConffilePtr conffile, const char* filename)
 {
-    FILE *fp;
+    FILE *fp = NULL;
     char *line = NULL;
     size_t len = 0;
     ssize_t read_len;
@@ -130,7 +130,7 @@ lxctoolsConffileRead(lxctoolsConffilePtr conffile, const char* filename)
 int
 lxctoolsConffileWrite(lxctoolsConffilePtr conffile, const char* filename)
 {
-    FILE *fp;
+    FILE *fp = NULL;
     int ret = -1;
     lxctoolsConffileEntryPtr it;
     if (conffile == NULL)
