@@ -624,7 +624,7 @@ int lxctoolsCheckStaticConfig(virDomainDefPtr def)
         return -1;
     }
 
-    if (virBitmapLastSetBit(def->cpumask) >= nodeinfo->cpus) {
+    if (def->cpumask && virBitmapLastSetBit(def->cpumask) >= nodeinfo->cpus) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("to many cpus set in cpuset"));
         return -1;
     }
