@@ -1148,8 +1148,7 @@ gettimeofday(&post_setup, NULL);
 #endif
     if (!startCopyProc(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
         tmpfs_path, cont->init_pid(cont), uri_in, live_migration)) {
-        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                       _("could not start copy processes"));
+        VIR_DEBUG("could not start copy processes");
         goto cleanup;
     }
 
