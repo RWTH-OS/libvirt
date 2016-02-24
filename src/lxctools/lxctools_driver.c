@@ -406,7 +406,6 @@ lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
     struct lxc_container* cont;
     const char *prog[] = {"lxc-start", "-d", "-n", dom->name, NULL};
     virCheckFlags(0, -1);
-
     vm = virDomainObjListFindByName(driver->domains, dom->name);
 
     if(!vm) {
@@ -422,6 +421,16 @@ lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
                        _("domain is not in shutoff state"));
         goto cleanup;
     }
+
+    if (!cont->want_daemonize(cont, false)) {
+        VIR_DEBUG("failed to set want_daemonize");
+    }
+
+/*    if (!cont->start(cont, 0, NULL)) {  //TODO: This does not work! Why?
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("failed to start container"));
+        goto cleanup;
+    }*/
 
     if (virRun(prog, NULL) < 0) {
         virReportError(VIR_ERR_OPERATION_ABORTED, "%s",
