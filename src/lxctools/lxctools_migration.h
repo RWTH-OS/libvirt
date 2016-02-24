@@ -29,7 +29,7 @@
 
 #include "domain_conf.h"
 
-#define LXCTOOLS_LIVE_MIGRATION_ITERATIONS 1
+#define LXCTOOLS_LIVE_MIGRATION_ITERATIONS 5 
 
 
 struct lxctools_migrate_data {

@@ -34,6 +34,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/time.h>
 
 #include "viralloc.h"
 #include "vircommand.h"
@@ -231,6 +232,29 @@ startServerThread(char* path, const char* criu_port)
     return true;
 }
 
+/*#include <dirent.h>
+#include <sys/stat.h>
+static ssize_t getDirSize(const char* path)
+{
+    DIR* dir;
+    struct dirent *subdirs;
+    struct stat stat;
+    size_t ret = 0;
+
+    if ((dir = opendir(path)) == NULL)
+        return -1;
+
+    do {
+        subdirs = readdir(dir);
+        if (stat(subdirs->d_name, &stat) < 0)
+            VIR_DEBUG("couldn't stat %s", subdirs->d_name);
+        ret += stat.st_size;
+
+    } while (subdirs != NULL);
+    closedir(dir);
+    return ret;
+}*/
+
 static bool
 doPreDump(const char* criu_port,
           const char* path,
@@ -258,6 +282,7 @@ doPreDump(const char* criu_port,
     char *predump_path;
     char subdir[3];
     char prev_path[6];
+    struct timeval pre_criu, post_criu, criu_runtime;
 
     for (i=0; i != LXCTOOLS_LIVE_MIGRATION_ITERATIONS; i++) {
         sprintf(subdir, "%d", i);
@@ -283,16 +308,21 @@ doPreDump(const char* criu_port,
                 goto cleanup;
         }*/
         int criu_ret;
-	for (int j=0; j != 10; j++) {
+        for (int j=0; j != 10; j++) {
+            gettimeofday(&pre_criu, NULL);
             criu_ret = virCommandRun(criu_cmd, NULL);
+            gettimeofday(&post_criu, NULL);
             if (criu_ret == 0) break;
 
-	    if (j==10) {
-		virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                           _("criu pre-dump did not start successfully"));
-                goto cleanup;
-	    }
-	}
+            if (j==10) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                               _("criu pre-dump did not start successfully"));
+                    goto cleanup;
+            }
+        }
+        timersub(&post_criu, &pre_criu, &criu_runtime);
+        printf("Live Migratio: Iteration: %d, Runtime:%ld.%06ld ", i, (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
+
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
 
