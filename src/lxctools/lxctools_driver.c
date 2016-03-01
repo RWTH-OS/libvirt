@@ -1450,6 +1450,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
     struct lxc_container *cont;
     unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE;
     lxctoolsConffilePtr conffile = NULL;
+    struct bdev_specs spec;
 
     virCheckFlags(VIR_DOMAIN_DEFINE_VALIDATE, NULL);
 
@@ -1469,44 +1470,67 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
         goto cleanup;
     }
 
-    if (!(cont = vm->privateData)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("inconsistent data for container '%s'"),
-                       vmdef->name);
-        goto cleanup;
-    }
-
     if (VIR_ALLOC(conffile) < 0)
         goto cleanup;
 
-    if (lxctoolsConffileRead(conffile, cont->config_file_name(cont)) < 0) {
-//        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", _("failed to read conffile"));
-        goto cleanup;
+    if (!(cont = vm->privateData)) {
+        VIR_DEBUG("container has no data. creating new container");
+        config_path = "/tmp/tmp.conf";
+    } else {
+
+        if ((config_path = cont->config_file_name(cont)) == NULL) {
+            goto cleanup;
+        }
+        if (lxctoolsConffileRead(conffile, config_path) < 0) {
+    //        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", _("failed to read conffile"));
+            goto cleanup;
+        }
+
+        if (lxctoolsConffileRemoveItems(conffile, "#(libvirt.lxctools)") < 0)
+            goto cleanup;
     }
 
-    if (lxctoolsConffileRemoveItems(conffile, "#(libvirt.lxctools)") < 0)
-        goto cleanup;
-
     if (lxctoolsSetBasicConfig(conffile, vmdef) < 0) {
-//        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set basic config for container %s", vmdef->name);
+        VIR_DEBUG("failed to set basic config for container %s", vmdef->name);
         goto cleanup;
     }
     if (lxctoolsSetFSConfig(conffile, vmdef) < 0) {
-//        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set fs config for container %s", vmdef->name);
+        VIR_DEBUG("failed to set fs config for container %s", vmdef->name);
         goto cleanup;
     }
 
     if (lxctoolsSetNetConfig(conffile, vmdef) < 0) {
-//        virReportError(VIR_ERR_OPERATION_FAILED, "failed to set net config for container %s", vmdef->name);
+        VIR_DEBUG("failed to set net config for container %s", vmdef->name);
         goto cleanup;
     }
 
-    if ((config_path = cont->config_file_name(cont)) == NULL) {
-        goto cleanup;
-    }
 
     if (lxctoolsConffileWrite(conffile, config_path) < 0)
         goto cleanup;
+
+    if (!cont) {
+        printf("name: %s, lxcpath: %s, config_path: %s\n", vmdef->name, driver->path, config_path);
+        if ((vm->privateData = lxc_container_new(vmdef->name, driver->path)) == NULL) {
+            VIR_DEBUG("error loading container");
+            goto cleanup;
+        }
+        cont = vm->privateData;
+        if (cont->is_defined(cont)) {
+            VIR_DEBUG("Container already exists");
+            goto cleanup;
+        }
+        if (!cont->load_config(cont, config_path)) {
+         VIR_DEBUG("Error while reading config file");
+            goto cleanup;
+        }
+        spec.fstype = NULL;
+        spec.dir = NULL;
+        if (!cont->create(cont, NULL, NULL, &spec, 0, NULL)) {
+            VIR_DEBUG("error on making container creation persistent");
+            goto cleanup;
+        }
+        VIR_DEBUG("successfully created new container");
+    }
     vmdef = NULL;
     vm->persistent = 1;
 
