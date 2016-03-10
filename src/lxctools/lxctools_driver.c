@@ -1093,6 +1093,7 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
     int ret = -1;
     bool live_migration = (flags & VIR_MIGRATE_LIVE);
 
+    VIR_DEBUG("dconnuri: '%s'", dconnuri);
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, -1);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         return -1;
@@ -1299,9 +1300,9 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     else
         ret = NULL;
  cleanup:
-    if (umount(tmpfs_path) < 0)
-        virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("failed to umount tmpfs: %s"), strerror(errno));
+  //  if (umount(tmpfs_path) < 0)
+  //      virReportError(VIR_ERR_OPERATION_FAILED,
+  //                     _("failed to umount tmpfs: %s"), strerror(errno));
 
     VIR_FREE(tmpfs_path);
     if(vm)
@@ -1398,9 +1399,9 @@ gettimeofday(&post_restore, NULL);
 
     ret = 0;
  cleanup:
-    if (umount(tmpfs_path) < 0)
-        virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("failed to umount tmpfs: %s"), strerror(errno));
+  //  if (umount(tmpfs_path) < 0)
+  //      virReportError(VIR_ERR_OPERATION_FAILED,
+  //                     _("failed to umount tmpfs: %s"), strerror(errno));
 
 #ifdef LXCTOOLS_EVALUATION
 gettimeofday(&post_confirm, NULL);

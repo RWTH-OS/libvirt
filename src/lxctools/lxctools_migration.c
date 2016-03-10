@@ -55,7 +55,7 @@ int restoreContainer(struct lxc_container *cont, bool live)
     char *tmpfs_path = NULL;
     char tmpfs_suffix[16] = "migrate_tmpfs";
     int ret = -1;
-
+ 
     if (live)
         sprintf(tmpfs_suffix, "migrate_tmpfs/%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS);
 
@@ -312,26 +312,30 @@ doPreDump(const char* criu_port,
             gettimeofday(&pre_criu, NULL);
             criu_ret = virCommandRun(criu_cmd, NULL);
             gettimeofday(&post_criu, NULL);
+	    VIR_DEBUG("criu return value: %d", criu_ret);
             if (criu_ret == 0) break;
-
-            if (j==10) {
+            if (j==9) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                                _("criu pre-dump did not start successfully"));
                     goto cleanup;
             }
         }
         timersub(&post_criu, &pre_criu, &criu_runtime);
-        printf("Live Migratio: Iteration: %d, Runtime:%ld.%06ld ", i, (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
+        VIR_DEBUG("Live Migration: Iteration: %d, Runtime:%ld.%06ld", i, (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
+
+	/* if migration needed less than 1 second then stop doing pre dumps */
+	if (LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS && criu_runtime.tv_sec < 1)
+		break;
 
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
 
         sprintf(prev_path, "../%d", i);
-        criu_arglist[24] = prev_path;
+        criu_arglist[26] = prev_path;
 
         if (i==0) {
-            criu_arglist[22] = live_additions[0];
-            criu_arglist[23] = live_additions[1];
+            criu_arglist[24] = live_additions[0];
+            criu_arglist[25] = live_additions[1];
         }
     }
     sprintf(prev_path_ret, "../%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS-1);
