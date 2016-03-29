@@ -38,6 +38,7 @@ struct lxctools_driver {
     unsigned long version;
     virDomainXMLOptionPtr xmlopt;
     struct lxctools_migrate_data* md;
+    int live_migration_iterations;
 };
 virCapsPtr lxctoolsCapabilitiesInit(void);
 char* getContainerNameFromPath(const char* path);
