@@ -63,11 +63,22 @@ int restoreContainer(struct lxc_container *cont, bool live)
                                   tmpfs_suffix)) == NULL)
         goto cleanup;
 
-    if (!cont->restore(cont, tmpfs_path, true)) {
+   /* if (!cont->restore(cont, tmpfs_path, true)) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                             _("lxc api call failed. check lxc log for more information"));
         goto cleanup;
-    }
+    }*/
+
+	struct migrate_opts opts;
+	opts.directory = tmpfs_path;
+	opts.verbose = true;
+	opts.stop = false;
+	opts.pageserver_address = NULL;
+	opts.pageserver_port = NULL;
+	opts.predump_dir = NULL;
+	if (!cont->migrate(cont, MIGRATE_RESTORE, &opts, sizeof(opts)))
+		printf("migrate returned false\n");
+
 
     if (!cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
@@ -370,14 +381,16 @@ doNormalDump(const char* criu_port,
                                   "--ext-mount-map", "auto",
                                   "--enable-external-sharing",
                                   "--enable-external-masters",
-                                  "--enable-fs", "hugetlbfs", "--tree",
+                                  "--enable-fs", "hugetlbfs",
+				  "--enable-fs", "tracefs",
+			          "--tree",
                                   pid, "--images-dir", path,
                                   "--page-server", "--address", dconnuri,
                                   "--port", criu_port,
                                   "--prev-images-dir", prev_path,
                                   NULL};
     if (prev_path == NULL)
-        criu_arglist[22] = NULL;
+        criu_arglist[24] = NULL;
 
     criu_cmd = virCommandNewArgs(criu_arglist);
 /*    if (!waitForPort(dconnuri, criu_port, 10)) {
@@ -430,11 +443,11 @@ gettimeofday(&post_predump, NULL);
         }
         VIR_FREE(dump_path);
     } else {
-        if (!doNormalDump(criu_port, path, pid_str, dconnuri, NULL)) {
+ /*       if (!doNormalDump(criu_port, path, pid_str, dconnuri, NULL)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                           _("normal dump failed."));
             return false;
-        }
+        }*/
     }
 #ifdef LXCTOOLS_EVALUATION
 gettimeofday(&post_criudump, NULL);
