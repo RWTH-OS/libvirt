@@ -324,8 +324,8 @@ doPreDump(const char* criu_port,
         VIR_DEBUG("Live Migration: Iteration: %d, Runtime:%ld.%06ld", i, (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
 
 	/* if migration needed less than 1 second then stop doing pre dumps */
-	if (LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS && criu_runtime.tv_sec < 1)
-		break;
+	    if (LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS && criu_runtime.tv_sec < 1)
+		    break;
 
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
