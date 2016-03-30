@@ -1166,8 +1166,8 @@ gettimeofday(&post_setup, NULL);
 	if (!cont->migrate(cont, MIGRATE_PAGESERVER_DUMP, &opts, sizeof(opts)))
 		printf("migrate returned false\n");
 	printf("migrate finished\n");
-    if (!startCopyProc(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
-        tmpfs_path, cont->init_pid(cont), uri_in, live_migration)) {
+    if (!startCopyProc(uri_in, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
+        tmpfs_path, cont,  live_migration)) {
         VIR_DEBUG("could not start copy processes");
         goto cleanup;
     }
