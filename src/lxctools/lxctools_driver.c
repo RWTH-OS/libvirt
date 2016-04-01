@@ -1156,16 +1156,6 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
 #ifdef LXCTOOLS_EVALUATION
 gettimeofday(&post_setup, NULL);
 #endif
-	struct migrate_opts opts;
-	opts.directory = tmpfs_path;
-	opts.verbose = true;
-	opts.stop = true;
-	opts.pageserver_address = (char*)uri_in;
-	opts.pageserver_port = (char*)LXCTOOLS_CRIU_PORT;
-	opts.predump_dir = NULL;
-	if (!cont->migrate(cont, MIGRATE_PAGESERVER_DUMP, &opts, sizeof(opts)))
-		printf("migrate returned false\n");
-	printf("migrate finished\n");
     if (!startCopyProc(uri_in, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
         tmpfs_path, cont,  live_migration)) {
         VIR_DEBUG("could not start copy processes");
