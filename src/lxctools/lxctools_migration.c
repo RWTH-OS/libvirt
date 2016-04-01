@@ -248,7 +248,7 @@ doPreDumps(const char* dir_path,
           struct lxc_container *cont,
           struct migrate_opts *opts)
 {
-    int i;
+    int i,j;
     char *predump_path;
     char subdir[5];
     char prev_path[10];
@@ -266,11 +266,12 @@ doPreDumps(const char* dir_path,
         }
 
 	    opts->directory = predump_path;
-        for (int j=0; j != 10; j++) {
+        for (j=0; j != 10; j++) {
             gettimeofday(&pre_criu, NULL);
             if (!cont->migrate(cont, MIGRATE_PRE_DUMP, opts, sizeof(opts))) {
                 VIR_DEBUG("migrate failed, try %d/10", j);
 	        } else {
+                VIR_DEBUG("migrate successfull on try %d/10", j);
                 gettimeofday(&post_criu, NULL);
                 break;
             }
@@ -292,8 +293,8 @@ doPreDumps(const char* dir_path,
 	    sprintf(prev_path, "../%d", i);
 	    opts->predump_dir = prev_path;
     }
-    sprintf(prev_path_ret, "../%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS-1);
-    sprintf(subdir, "%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS);
+    sprintf(prev_path_ret, "../%d", i);
+    sprintf(subdir, "%d", i+1);
     *dump_path_ret = concatPaths(dir_path, subdir);
 
     if (mkdir(*dump_path_ret, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
@@ -314,11 +315,11 @@ doNormalDump(struct lxc_container *cont,
 {
     int i;
     for (i=0; i != 10; i++) {
-    if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))) {
-	    virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-			   _("lxc migrate call failed"));
-	    break;
-	}
+        if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                           _("lxc migrate call failed"));
+            break;
+        }
     }
     return (i != 9);
 }
@@ -342,7 +343,7 @@ startCopyProc(const char* pageserver_address,
     opts.pageserver_port = (char*)pageserver_port;
     opts.predump_dir = NULL;
     if (live) {
-	char prev_path[5];
+        char prev_path[5];
         char *dump_path = NULL;
         prev_path[0] = '\0';
         if (!doPreDumps(image_path, prev_path, &dump_path, cont, &opts)) {
@@ -353,7 +354,7 @@ startCopyProc(const char* pageserver_address,
         }
 
         opts.directory = dump_path;
-	    opts.predump_dir = prev_path;
+        opts.predump_dir = prev_path;
         if (!doNormalDump(cont, &opts)) {
             VIR_FREE(dump_path);
             return false;
