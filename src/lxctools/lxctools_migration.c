@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <lxc/lxccontainer.h>
 #include <sys/mount.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -164,7 +165,7 @@ serverThread(void* arg)
     virCommandPtr criu_cmd = NULL;
     const char* criu_arglist[] = {"criu", "page-server", "--images-dir",
                                   NULL, "--port", data->criu_port,
-                                  NULL, NULL, NULL,
+                                  NULL, NULL,
                                   NULL};
     const char* live_additions[] = { "--prev-images-dir" };
     int i;
@@ -207,7 +208,6 @@ serverThread(void* arg)
 
         if (i==0) {
             criu_arglist[6] = live_additions[0];
-            criu_arglist[7] = live_additions[1];
         }
     }
     return (void*)-1;
