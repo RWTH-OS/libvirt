@@ -55,19 +55,13 @@ int restoreContainer(struct lxc_container *cont, bool live)
     char *tmpfs_path = NULL;
     char tmpfs_suffix[16] = "migrate_tmpfs";
     int ret = -1;
- 
+
     if (live)
         sprintf(tmpfs_suffix, "migrate_tmpfs/%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS);
 
     if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
                                   tmpfs_suffix)) == NULL)
         goto cleanup;
-
-   /* if (!cont->restore(cont, tmpfs_path, true)) {
-        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                            _("lxc api call failed. check lxc log for more information"));
-        goto cleanup;
-    }*/
 
 	struct migrate_opts opts;
 	opts.directory = tmpfs_path;
@@ -76,8 +70,12 @@ int restoreContainer(struct lxc_container *cont, bool live)
 	opts.pageserver_address = NULL;
 	opts.pageserver_port = NULL;
 	opts.predump_dir = NULL;
-	if (!cont->migrate(cont, MIGRATE_RESTORE, &opts, sizeof(opts)))
-		printf("migrate returned false\n");
+
+    if (!cont->migrate(cont, MIGRATE_RESTORE, &opts, sizeof(opts))) {
+		virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                            _("lxc api call failed. check lxc log for more information"));
+        goto cleanup;
+    }
 
 
     if (!cont->is_running(cont)) {
@@ -168,7 +166,7 @@ serverThread(void* arg)
                                   NULL, "--port", data->criu_port,
                                   NULL, NULL, NULL,
                                   NULL};
-    const char* live_additions[] = { "--auto-dedup", "--prev-images-dir" };
+    const char* live_additions[] = { "--prev-images-dir" };
     int i;
     pid_t pid;
     char *predump_path;
@@ -267,14 +265,14 @@ doPreDumps(const char* dir_path,
                 goto cleanup;
         }
 
-	opts->directory = predump_path;
+	    opts->directory = predump_path;
         for (int j=0; j != 10; j++) {
             gettimeofday(&pre_criu, NULL);
             if (!cont->migrate(cont, MIGRATE_PRE_DUMP, opts, sizeof(opts))) {
-		 VIR_DEBUG("migrate failed, try %d/10", j);
-	    } else {
+                VIR_DEBUG("migrate failed, try %d/10", j);
+	        } else {
                 gettimeofday(&post_criu, NULL);
-		break;
+                break;
             }
 
             if (j==9) {
@@ -286,13 +284,13 @@ doPreDumps(const char* dir_path,
         timersub(&post_criu, &pre_criu, &criu_runtime);
         VIR_DEBUG("Live Migration: Iteration: %d, Runtime:%ld.%06ld", i, (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
 
-	/* if migration needed less than 1 second then stop doing pre dumps */
+        /* if migration needed less than 1 second then stop doing pre dumps */
 	    if (LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS && criu_runtime.tv_sec < 1)
 		    break;
 
         VIR_FREE(predump_path);
-	sprintf(prev_path, "../%d", i);
-	opts->predump_dir = prev_path;
+	    sprintf(prev_path, "../%d", i);
+	    opts->predump_dir = prev_path;
     }
     sprintf(prev_path_ret, "../%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS-1);
     sprintf(subdir, "%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS);
@@ -302,7 +300,7 @@ doPreDumps(const char* dir_path,
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failes to create directory '%s'"),
                        *dump_path_ret);
-            goto cleanup;
+        goto cleanup;
     }
     return true;
  cleanup:
@@ -316,7 +314,7 @@ doNormalDump(struct lxc_container *cont,
 {
     int i;
     for (i=0; i != 10; i++) {
-   	if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))) {
+    if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))) {
 	    virReportError(VIR_ERR_OPERATION_FAILED, "%s",
 			   _("lxc migrate call failed"));
 	    break;
@@ -327,7 +325,7 @@ doNormalDump(struct lxc_container *cont,
 
 bool
 startCopyProc(const char* pageserver_address,
-	      const char* pageserver_port,
+	          const char* pageserver_port,
               const char* nc_port,
               const char* image_path,
               struct lxc_container* cont,
@@ -355,18 +353,17 @@ startCopyProc(const char* pageserver_address,
         }
 
         opts.directory = dump_path;
-	opts.predump_dir = prev_path;	
+	    opts.predump_dir = prev_path;
         if (!doNormalDump(cont, &opts)) {
             VIR_FREE(dump_path);
             return false;
         }
         VIR_FREE(dump_path);
     } else {
-    	if (!doNormalDump(cont, &opts)) {
-	    return false;
-	}
+        if (!doNormalDump(cont, &opts)) {
+	        return false;
+	    }
     }
-    
     copy_ret = lxctoolsRunSync(copy_arglist);
     VIR_DEBUG("criu client finished successfully, copy client finished: %d", copy_ret);
     return (copy_ret == 0);
