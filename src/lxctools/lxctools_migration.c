@@ -191,7 +191,7 @@ serverThread(void* arg)
         criu_arglist[3] = predump_path;
         criu_cmd = virCommandNewArgs(criu_arglist);
 
-        if (virCommandRunAsync(criu_cmd, &pid) != 0) {
+        if (virCommandRunAsync(criu_cmd, &pid)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu page-server returned bad exit code"));
                 goto cleanup;
@@ -201,7 +201,7 @@ serverThread(void* arg)
             pthread_barrier_wait(&start_barrier);
         }
 
-        if (lxctoolsWaitPID(pid) != 0) {
+        if (lxctoolsWaitPID(pid) != 1) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu page-server exited unsuccessfully."));
             virCommandFree(criu_cmd);
@@ -326,7 +326,7 @@ doNormalDump(struct lxc_container *cont,
 {
     int i;
     for (i=0; i != 10; i++) {
-        if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))) {
+        if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))!=0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("lxc migrate call failed"));
             break;
