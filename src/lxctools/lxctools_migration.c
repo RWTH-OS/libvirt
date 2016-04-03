@@ -118,7 +118,7 @@ bool createTmpfs(const char* path)
 static int lxctoolsRunAsync(const char** arglist, pid_t* pid)
 {
     pid_t child_pid;
-    VIR_DEBUG("abount to run %s", arglist[0]);
+    VIR_DEBUG("about to run %s", arglist[0]);
     child_pid = fork();
     if (child_pid == 0) {
         execvp(arglist[0], (char**)arglist);
@@ -137,6 +137,7 @@ static int lxctoolsRunAsync(const char** arglist, pid_t* pid)
 static int lxctoolsWaitPID(pid_t pid)
 {
     int return_status;
+    VIR_DEBUG("waiting for process %d...", pid);
     waitpid(pid, &return_status, 0);
     VIR_DEBUG("process %d finished with return status %d", pid, return_status);
     return WEXITSTATUS(return_status);
@@ -173,8 +174,11 @@ serverThread(void* arg)
     char *predump_path;
     char subdir[3];
     char prev_path[6];
+    if (pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL) != 0)
+        return (void*)-1;
 
     for (i=0; i != LXCTOOLS_LIVE_MIGRATION_ITERATIONS+1; i++) {
+        pthread_testcancel();
         sprintf(subdir, "%d", i);
         predump_path = concatPaths(data->path, subdir);
 
@@ -219,18 +223,20 @@ serverThread(void* arg)
 }
 
 static int
-startServerThread(char* path, const char* criu_port)
+startServerThread(char* path, const char* criu_port, pthread_t **thread)
 {
     struct thread_data *data;
-    pthread_t thread;
 
     if (VIR_ALLOC(data) < 0)
+        return -1;
+
+    if (VIR_ALLOC(*thread) < 0)
         return -1;
 
     data->path = path;
     data->criu_port = criu_port;
     pthread_barrier_init(&start_barrier, NULL, 2);
-    if (pthread_create(&thread, NULL, serverThread, data) != 0) {
+    if (pthread_create(*thread, NULL, serverThread, data) != 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("could not start server thread"));
         return -1;
@@ -388,12 +394,11 @@ bool startCopyServer(struct lxctools_migrate_data* md,
         return false;
 
     if (!live) {
-        criu_arglist[6] = NULL;
         criu_cmd = virCommandNewArgs(criu_arglist);
         criu_ret = virCommandRunAsync(criu_cmd, &md->criusrv_pid);
         virCommandFree(criu_cmd);
     } else {
-        startServerThread(pathcpy, criu_port);
+        startServerThread(pathcpy, criu_port, &md->server_thread);
     }
     copy_ret = lxctoolsRunAsync(copy_arglist, &md->copysrv_pid);
 
@@ -415,6 +420,8 @@ waitForMigrationProcs(struct lxctools_migrate_data* md)
             ret = false;
     } else if (md->criusrv_pid == 0 &&
                md->server_thread != NULL) {
+        if (pthread_cancel(*md->server_thread) != 0)
+            VIR_DEBUG("pthread_cancel returned non-zero");
         if (pthread_join(*md->server_thread, &retval) != 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                           _("failed to join server thread"));
