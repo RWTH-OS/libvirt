@@ -139,7 +139,7 @@ static int lxctoolsWaitPID(pid_t pid)
     int return_status;
     VIR_DEBUG("waiting for process %d...", pid);
     waitpid(pid, &return_status, 0);
-    VIR_DEBUG("process %d finished with return status %d", pid, return_status);
+    VIR_DEBUG("process %d finished with return status %d", pid, WEXITSTATUS(return_status));
     return WEXITSTATUS(return_status);
 }
 
@@ -201,14 +201,19 @@ serverThread(void* arg)
             pthread_barrier_wait(&start_barrier);
         }
 
-        if (lxctoolsWaitPID(pid) < 0)
+        if (lxctoolsWaitPID(pid) != 0) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                           _("criu page-server exited unsuccessfully."));
+            virCommandFree(criu_cmd);
+            VIR_FREE(predump_path);
             return (void*)-1;
+        }
 
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
 
         sprintf(prev_path, "../%d", i);
-        criu_arglist[8] = prev_path;
+        criu_arglist[7] = prev_path;
 
         if (i==0) {
             criu_arglist[6] = live_additions[0];
