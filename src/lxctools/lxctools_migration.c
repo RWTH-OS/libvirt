@@ -304,8 +304,8 @@ doPreDumps(const char* dir_path,
 	    sprintf(prev_path, "../%d", i);
 	    opts->predump_dir = prev_path;
     }
-    sprintf(prev_path_ret, "../%d", i);
-    sprintf(subdir, "%d", i+1);
+    sprintf(prev_path_ret, "../%d", i-1);
+    sprintf(subdir, "%d", i);
     *dump_path_ret = concatPaths(dir_path, subdir);
 
     if (mkdir(*dump_path_ret, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
