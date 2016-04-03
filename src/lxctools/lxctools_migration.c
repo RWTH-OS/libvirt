@@ -416,7 +416,6 @@ bool
 waitForMigrationProcs(struct lxctools_migrate_data* md)
 {
     bool ret = true;
-    void* retval = 0;
     if (md->criusrv_pid > 0 &&
        lxctoolsWaitPID(md->criusrv_pid) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED,
@@ -426,13 +425,7 @@ waitForMigrationProcs(struct lxctools_migrate_data* md)
     } else if (md->criusrv_pid == 0 &&
                md->server_thread != NULL) {
         if (pthread_cancel(*md->server_thread) != 0)
-            VIR_DEBUG("pthread_cancel returned non-zero");
-        if (pthread_join(*md->server_thread, &retval) != 0) {
-            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                          _("failed to join server thread"));
-            ret = false;
-        }
-        ret =  (*((int*)retval) == 0);
+            VIR_DEBUG("thread could not be canceled. It probably already finished.");
     }
     if (md->copysrv_pid > 0 &&
         lxctoolsWaitPID(md->copysrv_pid) < 0) {
