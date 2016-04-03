@@ -29,9 +29,9 @@
 
 #include "domain_conf.h"
 
-#define LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS 1
+#define LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS 0
 /* Maxmium number of iterations in live migration. Will only be done if Migration time does not converge */
-#define LXCTOOLS_LIVE_MIGRATION_ITERATIONS 10 
+#define LXCTOOLS_LIVE_MIGRATION_ITERATIONS 3 
 
 
 struct lxctools_migrate_data {
