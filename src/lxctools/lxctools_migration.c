@@ -309,6 +309,7 @@ doPreDumps(const char* dir_path,
     *dump_path_ret = concatPaths(dir_path, subdir);
 
     if (mkdir(*dump_path_ret, S_IWUSR | S_IRUSR | S_IRGRP) < 0) {
+        VIR_DEBUG("migrate failed, try %d/10", j);
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failes to create directory '%s'"),
                        *dump_path_ret);
@@ -325,14 +326,18 @@ doNormalDump(struct lxc_container *cont,
              struct migrate_opts *opts)
 {
     int i;
+    VIR_DEBUG("performing (final) normal migration...");
     for (i=0; i != 10; i++) {
         if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))!=0) {
-            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                           _("lxc migrate call failed"));
-            break;
+            VIR_DEBUG("migrate failed, try %d/10", j);
+        } else {
+            VIR_DEBUG("migrate successfull on try %d/10", i);
+            return true;
         }
     }
-    return (i != 9);
+    virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                   _("lxc migrate call failed"));
+    return false;
 }
 
 bool
