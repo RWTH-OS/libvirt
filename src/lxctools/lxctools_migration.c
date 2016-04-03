@@ -72,7 +72,7 @@ int restoreContainer(struct lxc_container *cont, bool live)
 	opts.pageserver_port = NULL;
 	opts.predump_dir = NULL;
 
-    if (!cont->migrate(cont, MIGRATE_RESTORE, &opts, sizeof(opts))) {
+    if (cont->migrate(cont, MIGRATE_RESTORE, &opts, sizeof(opts))!=0) {
 		virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                             _("lxc api call failed. check lxc log for more information"));
         goto cleanup;
@@ -279,7 +279,7 @@ doPreDumps(const char* dir_path,
 	    opts->directory = predump_path;
         for (j=0; j != 10; j++) {
             gettimeofday(&pre_criu, NULL);
-            if (!cont->migrate(cont, MIGRATE_PRE_DUMP, opts, sizeof(opts))) {
+            if (cont->migrate(cont, MIGRATE_PRE_DUMP, opts, sizeof(opts))!=0) {
                 VIR_DEBUG("migrate failed, try %d/10", j);
 	        } else {
                 VIR_DEBUG("migrate successfull on try %d/10", j);
