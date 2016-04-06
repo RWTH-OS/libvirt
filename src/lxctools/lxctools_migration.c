@@ -331,7 +331,7 @@ doNormalDump(struct lxc_container *cont,
     VIR_DEBUG("performing (final) normal migration...");
     for (i=0; i != 10; i++) {
         if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))!=0) {
-            VIR_DEBUG("migrate failed, try %d/10", j);
+            VIR_DEBUG("migrate failed, try %d/10", i);
         } else {
             VIR_DEBUG("migrate successfull on try %d/10", i);
             return true;
