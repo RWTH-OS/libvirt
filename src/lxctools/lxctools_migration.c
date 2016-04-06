@@ -128,6 +128,7 @@ static int lxctoolsRunAsync(const char** arglist, pid_t* pid)
         //failed to fork
         return -1;
     } else {
+        VIR_DEBUG("started process with pid %d", child_pid);
         if (pid != NULL)
             *pid = child_pid;
         return 0;
@@ -208,6 +209,7 @@ serverThread(void* arg)
             VIR_FREE(predump_path);
             return (void*)-1;
         }
+        //TODO: pageserver need to be killed in case of thread cancellation
 
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
