@@ -337,6 +337,7 @@ doNormalDump(struct lxc_container *cont,
             return true;
         }
     }
+    waitpid(-1, NULL, WNOHANG);
     virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                    _("lxc migrate call failed"));
     return false;
