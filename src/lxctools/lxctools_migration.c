@@ -297,10 +297,18 @@ doPreDumps(const char* dir_path,
         }
         timersub(&post_criu, &pre_criu, &criu_runtime);
         VIR_DEBUG("Live Migration: Iteration: %d, Runtime:%ld.%06ld", i, (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
+#ifdef LXCTOOLS_EVALUATION
+    printf("pre-dump %d: %ld.%06ld ", i, (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
+    FILE *time_file = fopen("/tmp/lxctoolseval", "a+");
+    fprintf(time_file, "%ld.%06ld ", (long int)criu_runtime.tv_sec, (long int)criu_runtime.tv_usec);
+#endif
+
 
         /* if migration needed less than 1 second then stop doing pre dumps */
-	    if (LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS && criu_runtime.tv_sec < 1)
-		    break;
+	    if (LXCTOOLS_LIVE_MIGRATION_ENABLE_VARIABLE_STEPS && criu_runtime.tv_sec < 1) {
+		i++;
+		break;
+	}
 
         VIR_FREE(predump_path);
 	    sprintf(prev_path, "../%d", i);
@@ -328,17 +336,30 @@ doNormalDump(struct lxc_container *cont,
              struct migrate_opts *opts)
 {
     int i;
+    struct timeval pre_dump, post_dump, dump_runtime;
     VIR_DEBUG("performing (final) normal migration...");
+    opts->stop = true;
     for (i=0; i != 10; i++) {
+
+            gettimeofday(&pre_dump, NULL);
         if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))!=0) {
             VIR_DEBUG("migrate failed, try %d/10", i);
         } else {
             VIR_DEBUG("migrate successfull on try %d/10", i);
+           gettimeofday(&post_dump, NULL);
+timersub(&post_dump, &pre_dump, &dump_runtime);
+        VIR_DEBUG("Normal Migration: Runtime:%ld.%06ld", (long int)dump_runtime.tv_sec, (long int)dump_runtime.tv_usec);
+#ifdef LXCTOOLS_EVALUATION
+    printf("dump: %ld.%06ld ", (long int)dump_runtime.tv_sec, (long int)dump_runtime.tv_usec);
+    FILE *time_file = fopen("/tmp/lxctoolseval", "a+");
+    fprintf(time_file, "%ld.%06ld ", (long int)dump_runtime.tv_sec, (long int)dump_runtime.tv_usec);
+#endif
+
+
             return true;
         }
     }
-    waitpid(-1, NULL, WNOHANG);
-    virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+     virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                    _("lxc migrate call failed"));
     return false;
 }
@@ -357,7 +378,7 @@ startCopyProc(const char* pageserver_address,
     struct migrate_opts opts;
     opts.directory = (char*)image_path;
     opts.verbose = true;
-    opts.stop = true;
+    opts.stop = false;
     opts.pageserver_address = (char*)pageserver_address;
     opts.pageserver_port = (char*)pageserver_port;
     opts.predump_dir = NULL;
