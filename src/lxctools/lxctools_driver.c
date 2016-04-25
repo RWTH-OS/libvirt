@@ -877,7 +877,21 @@ lxctoolsNodeGetCPUMap(virConnectPtr conn ATTRIBUTE_UNUSED,
 
 #ifdef LXCTOOLS_EVALUATION
 #include <sys/time.h>
-struct timeval start, post_setup, post_dump, post_restore, post_confirm;
+struct timeval time_start, time_stop, time_diff;
+FILE *time_file;
+static void init_time(void)
+{
+    gettimeofday(&time_start, NULL);
+    time_file = fopen("/tmp/lxctoolseval", "a+");
+}
+static void timelog(const char* name)
+{
+    gettimeofday(&time_stop, NULL);
+    timersub(&time_stop, &time_start, &time_diff);
+    printf("%s: %ld.%06ld ", name, (long int)time_diff.tv_sec, (long int)time_diff.tv_usec);
+    fprintf(time_file, "%ld.%06ld ", (long int)time_diff.tv_sec, (long int)time_diff.tv_usec);
+    gettimeofday(&time_start, NULL);
+}
 #endif
 /*
  * Src: Begin
@@ -898,7 +912,7 @@ lxctoolsDomainMigrateBegin3Params(virDomainPtr domain,
     struct lxctools_driver *driver = domain->conn->privateData;
     char *xml = NULL;
 #ifdef LXCTOOLS_EVALUATION
-gettimeofday(&start, NULL);
+init_time();
 #endif
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
@@ -1154,7 +1168,7 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
     }
     VIR_DEBUG("mounted tmpfs at: %s", tmpfs_path);
 #ifdef LXCTOOLS_EVALUATION
-gettimeofday(&post_setup, NULL);
+timelog("setup");
 #endif
     if (!startCopyProc(uri_in, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
         tmpfs_path, cont,  live_migration)) {
@@ -1183,7 +1197,7 @@ gettimeofday(&post_setup, NULL);
 
     ret = 0;
 #ifdef LXCTOOLS_EVALUATION
-gettimeofday(&post_dump, NULL);
+timelog("complete-dump");
 #endif
 cleanup:
     if(vm)
@@ -1332,7 +1346,7 @@ lxctoolsDomainMigrateConfirm3Params(virDomainPtr domain,
     bool live_migration = (flags & VIR_MIGRATE_LIVE);
 
 #ifdef LXCTOOLS_EVALUATION
-gettimeofday(&post_restore, NULL);
+timelog("restore");
 #endif
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, -1);
 
@@ -1404,34 +1418,7 @@ gettimeofday(&post_restore, NULL);
   //                     _("failed to umount tmpfs: %s"), strerror(errno));
 
 #ifdef LXCTOOLS_EVALUATION
-gettimeofday(&post_confirm, NULL);
-    struct timeval total, setup, dump, criudump, predump, residualcopy, restore, confirm;
-    timersub(&post_confirm, &start, &total);
-    timersub(&post_setup, &start, &setup);
-    timersub(&post_dump, &post_setup, &dump);
-    timersub(&post_predump, &post_setup, &predump);
-    timersub(&post_criudump, &post_predump, &criudump);
-    timersub(&post_residualcopy, &post_criudump, &residualcopy);
-    timersub(&post_restore, &post_dump, &restore);
-    timersub(&post_confirm, &post_restore, &confirm);
-    printf("total:%ld.%06ld ", (long int)total.tv_sec, (long int)total.tv_usec);
-    printf("setup:%ld.%06ld ", (long int)setup.tv_sec, (long int)setup.tv_usec);
-    printf("dump:%ld.%06ld ", (long int)dump.tv_sec, (long int)dump.tv_usec);
-    printf("predump:%ld.%06ld ", (long int)predump.tv_sec, (long int)predump.tv_usec);
-    printf("criudump:%ld.%06ld ", (long int)criudump.tv_sec, (long int)criudump.tv_usec);
-    printf("residualcopy:%ld.%06ld ", (long int)residualcopy.tv_sec, (long int)residualcopy.tv_usec);
-    printf("restore:%ld.%06ld ", (long int)restore.tv_sec, (long int)restore.tv_usec);
-    printf("confirm:%ld.%06ld ", (long int)confirm.tv_sec, (long int)confirm.tv_usec);
-
-    FILE* file = fopen("/tmp/lxctoolseval", "a+");
-    fprintf(file, "%ld.%06ld ", (long int)total.tv_sec, (long int)total.tv_usec);
-    fprintf(file, "%ld.%06ld ", (long int)setup.tv_sec, (long int)setup.tv_usec);
-    fprintf(file, "%ld.%06ld ", (long int)dump.tv_sec, (long int)dump.tv_usec);
-    fprintf(file, "%ld.%06ld ", (long int)predump.tv_sec, (long int)predump.tv_usec);
-    fprintf(file, "%ld.%06ld ", (long int)criudump.tv_sec, (long int)criudump.tv_usec);
-    fprintf(file, "%ld.%06ld ", (long int)residualcopy.tv_sec, (long int)residualcopy.tv_usec);
-    fprintf(file, "%ld.%06ld ", (long int)restore.tv_sec, (long int)restore.tv_usec);
-    fprintf(file, "%ld.%06ld\n", (long int)confirm.tv_sec, (long int)confirm.tv_usec);
+timelog("end");
 #endif
 
     VIR_FREE(tmpfs_path);
