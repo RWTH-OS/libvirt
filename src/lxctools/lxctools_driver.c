@@ -131,10 +131,13 @@ virDomainDefParserConfig lxctoolsDomainDefParserConfig = {
         .domainPostParseCallback = lxctoolsDomainDefPostParse,
         .devicesPostParseCallback = lxctoolsDomainDeviceDefPostParse,
 };
-static int lxctoolsConnectGetVersion(virConnectPtr conn, unsigned long *version)
+
+static int lxctoolsConnectGetVersion(virConnectPtr conn ATTRIBUTE_UNUSED, unsigned long *version)
 {
-    struct lxctools_driver *driver = conn->privateData;
-    *version = driver->version;
+    const char* version_str = lxc_get_version();
+    if (virParseVersionString(version_str, version, true) < 0) {
+        virReportError(VIR_ERR_OPERATION_FAILED, "version string '%s' could not be converted", version_str);
+    }
     return 0;
 }
 

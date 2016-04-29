@@ -35,7 +35,6 @@ struct lxctools_driver {
     virDomainObjListPtr domains;
     int numOfDomains;
     virCapsPtr caps;
-    unsigned long version;  //TODO: move to getVersion function
     virDomainXMLOptionPtr xmlopt;
     struct lxctools_migrate_data* md;
     int live_migration_iterations;
