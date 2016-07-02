@@ -211,7 +211,7 @@ size_t path_offset = 0;
 static int walkdir_item(const char *fpath, const struct stat *sb, int typeflag, struct FTW* ftwbuf ATTRIBUTE_UNUSED)
 {
     const char *spath;
-    statustype_t status;
+  //  statustype_t status;
     if (path_offset == 0 && typeflag == FTW_D) {
         path_offset = strlen(fpath)+1;
         return 0;  //we are at ".". This does not need to be transmitted.
@@ -219,11 +219,11 @@ static int walkdir_item(const char *fpath, const struct stat *sb, int typeflag, 
     spath = fpath + path_offset;
     
     VIR_DEBUG("about to send '%s'", spath);
-    if ((status = client_receive_status(g_socket)) != STATUS_ACK) {
+ /*   if ((status = client_receive_status(g_socket)) != STATUS_ACK) {
         VIR_DEBUG("received wrong status (not STATUS_ACK) %d", status);
         return -4;
     }
-    VIR_DEBUG("received ack");
+    VIR_DEBUG("received ack");*/
     if (typeflag == FTW_F) {
         if (walkdir_send_reg(g_socket, fpath, spath, sb->st_size) < 0)
             return -2;
@@ -251,10 +251,10 @@ int client_senddir(const char* dir)
         VIR_DEBUG("nftw failed on '%s'\n", dir);
         return -1;
     }
-    if (client_receive_status(g_socket) != STATUS_ACK) {
+   /* if (client_receive_status(g_socket) != STATUS_ACK) {
         VIR_DEBUG("received wrong status (not STATUS_ACK)");
         return -4;
-    }
+    }*/
     if (walkdir_send_type(g_socket, TYPE_ENDTOKEN) < 0) {
         VIR_DEBUG("could not send endtoken");
         return -1;

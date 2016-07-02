@@ -117,24 +117,6 @@ static int data_handler_stringify(const char* data, size_t size, void* param)
     strpos += size;
     return 0;
 }
-    /*
-    VIR_DEBUG("stringify called");
-    static size_t string_size;
-    char** string = (char**)param;
-    int reset = 0;
-    if (*string == NULL) {
-        string_size = 1;
-        reset = 1;
-    }
-    if ((*string = realloc(*string, string_size+size)) == NULL)
-        return -1;
-    if (reset)
-        (*string)[0] = '\0'; //make string empty for concat
-    string_size += size;
-    strncat(*string, data, size);
-    VIR_DEBUG("strigify finished");
-    return 0;
-}*/
 
 static int data_handler_filewriter(const char* data, size_t size, void* param)
 {
@@ -377,10 +359,10 @@ int server_receive_files(int socket, const char* dir)
             VIR_DEBUG("received something that is not supported (i.e. not a regular file, a symlink or a folder...");
             goto err;
         }
-        if (server_send_status(socket, STATUS_ACK) < 0) {
+      /*  if (server_send_status(socket, STATUS_ACK) < 0) {
             VIR_DEBUG("could not send ACK");
             goto err;
-        }
+        }*/
         filetype = server_receive_type(socket, server_data);
         VIR_DEBUG("received type %d", filetype);
     }

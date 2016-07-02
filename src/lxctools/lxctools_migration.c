@@ -565,16 +565,18 @@ waitForMigrationProcs(struct lxctools_migrate_data* md)
     } else if (md->criusrv_pid == 0 &&
                md->server_thread != NULL) {
         struct timespec timeout;
-        timeout.tv_sec = time(NULL);
+        if (clock_gettime(CLOCK_REALTIME, &timeout) == -1) {
+            virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                           _("could not get current time"));
+            goto error;
+        }
         timeout.tv_sec += 5;
         if ((error_num= pthread_timedjoin_np(*md->server_thread, &thread_res, &timeout)) != 0) {
             if (error_num != EBUSY && error_num != ETIMEDOUT) {
                 virReportError(VIR_ERR_OPERATION_FAILED,
-                               "%s", _("thread join failed"));
+                               _("thread join failed: error %d"), error_num);
                 goto error;
             } else {
-                if(error_num == EBUSY) VIR_DEBUG("EBUSY");
-                else if (error_num == ETIMEDOUT) VIR_DEBUG("ETIMEDOUT");
                 if (pthread_cancel(*md->server_thread) != 0)
                     VIR_DEBUG("thread could not be canceled. It probably already finished.");
                 if (pthread_join(*md->server_thread, &thread_res) != 0) {
@@ -589,7 +591,10 @@ waitForMigrationProcs(struct lxctools_migrate_data* md)
                     md->server_thread = NULL;
                     goto error;
                 }
-            }
+            }/*
+        if (pthread_join(*md->server_thread, &thread_res) != 0) {
+            printf("error\n");
+            goto error;*/
         } else {
             ret = *(int*)thread_res;
             VIR_FREE(thread_res);
