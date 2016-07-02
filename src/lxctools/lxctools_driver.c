@@ -1389,7 +1389,7 @@ timelog("restore");
                        _("migration failed, restart container '%s'"), domain->name);
 
         if (!cont->is_running(cont)) {
-            restoreContainer(cont, live_migration, 0);
+            restoreContainer(cont, live_migration, 1);
         }
 
         if (!cont->is_running(cont)) {
