@@ -109,6 +109,7 @@ static int data_handler_stringify(const char* data, size_t size, void* param)
         *string = malloc(size);
     } else {
         *string = malloc(strpos+size);
+        memcpy(*string, oldstring, strpos);
         free(oldstring);
     }
     if (*string == NULL)
