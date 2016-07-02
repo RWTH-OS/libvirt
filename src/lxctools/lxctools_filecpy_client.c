@@ -80,11 +80,11 @@ static int walkdir_send_type(int sock, cpytype_t type)
 
 void client_close(int sock)
 {
-    if (walkdir_send_type(sock, TYPE_ENDTOKEN) < 0) {
+    /*if (walkdir_send_type(sock, TYPE_ENDTOKEN) < 0) {
         VIR_DEBUG("error while sending end_token.\n");
     } else {
         VIR_DEBUG("sent end token\n");
-    }
+    }*/
     close(sock);
 }
 
@@ -127,25 +127,21 @@ static int walkdir_send_reg(int sock, const char* filename, const char *sendname
     size_t len;
     int file;
     int ret = -1;
-VIR_DEBUG("1");
     if ((file = open(filename, O_RDONLY | O_NOFOLLOW)) < 0) {
         VIR_DEBUG("errno: %s", strerror(errno));
         goto err;
     }
 
-VIR_DEBUG("2");
     if (walkdir_send_type(sock, TYPE_REG) < 0) {
         VIR_DEBUG("could not send file type for '%s'", sendname);
         goto err;
     }
-VIR_DEBUG("3");
     len = strlen(sendname) + 1;
     if (walkdir_send_name(sock, sendname, len) < 0) {
         VIR_DEBUG("could not send file name for '%s'", sendname);
         goto err;
     }
 
-VIR_DEBUG("4");
     if (walkdir_send_file(sock, file, filesize) != filesize) {
         VIR_DEBUG("could not send file content for '%s'", sendname);
         goto err;
@@ -250,12 +246,20 @@ int client_senddir(const char* dir)
 {
 
     path_offset = 0;
-    VIR_DEBUG("starting copyclien...");
+    VIR_DEBUG("starting copyclient...");
     if (nftw(dir, walkdir_item, 15, FTW_PHYS) < 0) {
         VIR_DEBUG("nftw failed on '%s'\n", dir);
         return -1;
     }
-
+    if (client_receive_status(g_socket) != STATUS_ACK) {
+        VIR_DEBUG("received wrong status (not STATUS_ACK)");
+        return -4;
+    }
+    if (walkdir_send_type(g_socket, TYPE_ENDTOKEN) < 0) {
+        VIR_DEBUG("could not send endtoken");
+        return -1;
+    }
+    VIR_DEBUG("send endtoken");
     return 0;
 }
 

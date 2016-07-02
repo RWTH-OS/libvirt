@@ -44,10 +44,10 @@ bool startCopyProc(const char* pageserver_address, const char* pageserver_port, 
 
 bool startCopyServer(struct lxctools_migrate_data* md, const char* criu_port, const char* copy_port, const char* path, bool live);
 
-bool waitForMigrationProcs(struct lxctools_migrate_data* md);
+int waitForMigrationProcs(struct lxctools_migrate_data* md);
 bool createTmpfs(const char* path);
 
-int restoreContainer(struct lxc_container *cont, bool live);
+int restoreContainer(struct lxc_container *cont, bool live, int migration_iterations);
 
 #define LXCTOOLS_EVALUATION
 
