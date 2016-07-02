@@ -1234,6 +1234,7 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
     char *tmpfs_path = NULL;
     struct lxc_container* cont;
     virDomainPtr ret = NULL;
+    int migration_iterations;
 
     bool live_migration = (flags & VIR_MIGRATE_LIVE);
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
@@ -1284,11 +1285,14 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
         goto cleanup;
     }
 
-    if (!waitForMigrationProcs(driver->md)) {
+    if ((migration_iterations = waitForMigrationProcs(driver->md)) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                       _("copy and/or criu process returned something else than 0"));
+                       _("error while waiting on migration process to exit."));
         goto cleanup;
     }
+
+    //we start counting at 0 thus we need to add 1
+    VIR_DEBUG("performed %d migration iterations", migration_iterations);
 
     if (!cont->may_control(cont)) {
 	virReportError(VIR_ERR_OPERATION_DENIED, "%s",
@@ -1301,7 +1305,7 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
                        _("criu binary not found in PATH"));
         goto cleanup;
     }
-    restoreContainer(cont, live_migration);
+    restoreContainer(cont, live_migration, migration_iterations);
     if (!cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("something went wrong while trying to restore container '%s'"),
@@ -1380,12 +1384,12 @@ timelog("restore");
         goto cleanup;
     }
 
-    if (cancelled) {
+    if (cancelled && !live_migration) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("migration failed, restart container '%s'"), domain->name);
 
         if (!cont->is_running(cont)) {
-            restoreContainer(cont, live_migration);
+            restoreContainer(cont, live_migration, 0);
         }
 
         if (!cont->is_running(cont)) {
@@ -1393,7 +1397,7 @@ timelog("restore");
                            _("container '%s' did not restore on api call"),
                            domain->name);
             goto cleanup;
-        }
+        } 
         virDomainObjSetState(vm, VIR_DOMAIN_RUNNING, VIR_DOMAIN_RUNNING_MIGRATION_CANCELED);
     } else if (cont->is_running(cont)) {
         if (!cont->stop(cont)) {

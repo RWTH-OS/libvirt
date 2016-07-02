@@ -53,14 +53,14 @@
 VIR_LOG_INIT("lxctools.lxctools_migration");
 
 
-int restoreContainer(struct lxc_container *cont, bool live)
+int restoreContainer(struct lxc_container *cont, bool live ATTRIBUTE_UNUSED, int migration_iterations)
 {
     char *tmpfs_path = NULL;
     char tmpfs_suffix[16] = "migrate_tmpfs";
     int ret = -1;
 
-    if (live)
-        sprintf(tmpfs_suffix, "migrate_tmpfs/%d", LXCTOOLS_LIVE_MIGRATION_ITERATIONS);
+    //if (live)
+    sprintf(tmpfs_suffix, "migrate_tmpfs/%d", migration_iterations-1);
 
     if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
                                   tmpfs_suffix)) == NULL)
@@ -117,7 +117,7 @@ bool createTmpfs(const char* path)
     return ret;
 }
 
-static int lxctoolsRunAsync(const char** arglist, pid_t* pid)
+/*static int lxctoolsRunAsync(const char** arglist, pid_t* pid)
 {
     pid_t child_pid;
     VIR_DEBUG("about to run %s", arglist[0]);
@@ -135,7 +135,7 @@ static int lxctoolsRunAsync(const char** arglist, pid_t* pid)
             *pid = child_pid;
         return 0;
     }
-}
+}*/
 
 static int lxctoolsWaitPID(pid_t pid)
 {
@@ -146,7 +146,7 @@ static int lxctoolsWaitPID(pid_t pid)
     return WEXITSTATUS(return_status);
 }
 
-static int lxctoolsRunSync(const char** arglist)
+/*static int lxctoolsRunSync(const char** arglist)
 {
     pid_t child;
     if (lxctoolsRunAsync(arglist, &child) < 0)
@@ -154,7 +154,7 @@ static int lxctoolsRunSync(const char** arglist)
     else
         return lxctoolsWaitPID(child);
 }
-
+*/
 pthread_barrier_t start_barrier;
 
 struct thread_data {
@@ -179,20 +179,21 @@ serverThread(void* arg)
     char subdir[3];
     char prev_path[6];
     int filecpy_socket = -1;
+    int peersocket = -1;
     statustype_t status;
+    int* ret;
 
     if (pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL) != 0)
         return (void*)-1;
 
     if ((filecpy_socket = server_start(data->cpy_port)) < 0) {
-        virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("failed to start filecopy server at port '%s'"),
-                         data->cpy_port);
+        printf("ERROR:  failed to start filecopy server at port '%s'\n",
+               data->cpy_port);
         goto cleanup;
     }
     pthread_barrier_wait(&start_barrier);
 
-    if ((filecpy_socket = server_connect_block(filecpy_socket)) < 0) {
+    if ((peersocket = server_connect_block(filecpy_socket)) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("failed to connect to client"));
         goto cleanup;
@@ -200,13 +201,14 @@ serverThread(void* arg)
 
     for (i=0; i != LXCTOOLS_LIVE_MIGRATION_ITERATIONS+1; i++) {
         pthread_testcancel();
-        status = server_receive_status_noblock(filecpy_socket);
+        status = server_receive_status_noblock(peersocket);
         if (status == STATUS_ERR) {
             virReportError(VIR_ERR_OPERATION_FAILED,
                            _("failed to receive status"));
             goto cleanup;
         } else if(status == STATUS_END) {
-            VIR_DEBUG("Received STATUS_END aftere %d iterations.", i-1);
+            printf("Received STATUS_END aftere %d iterations.\n", i);
+      //      virCommandFree(criu_cmd);
             break;
         }
 
@@ -222,13 +224,14 @@ serverThread(void* arg)
         criu_arglist[3] = predump_path;
         criu_cmd = virCommandNewArgs(criu_arglist);
 
+//TODO: error here
         if (virCommandRunAsync(criu_cmd, &pid)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu page-server returned bad exit code"));
             goto cleanup;
         }
-
-        if (server_send_status(filecpy_socket, STATUS_RDY) < 0) {
+usleep(1000);
+        if (server_send_status(peersocket, STATUS_RDY) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("sending STATUS_RDY failed"));
             goto cleanup;
@@ -241,7 +244,6 @@ serverThread(void* arg)
             VIR_FREE(predump_path);
             return (void*)-1;
         }
-        //TODO: pageserver need to be killed in case of thread cancellation
 
         virCommandFree(criu_cmd);
         VIR_FREE(predump_path);
@@ -253,22 +255,31 @@ serverThread(void* arg)
             criu_arglist[6] = live_additions[0];
         }
     }
-
- /*   if (server_receive_files(filecpy_socket, data->path) < 0) {
+printf("before receive\n");
+    if (server_receive_files(peersocket, data->path) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        "failed to receive files to path '%s'.",
                        data->path);
         goto cleanup;
-    }*/
-
+    }
+printf("after receive\n");
+    server_close(peersocket);
     server_close(filecpy_socket);
-    return (void*)-1;
+    VIR_FREE(predump_path);
+    VIR_FREE(data->path);
+    VIR_FREE(data);
+    if (VIR_ALLOC(ret) < 0) goto cleanup;
+    *ret = i;
+    printf("thread ended\n");
+    return (void*)(ret);
  cleanup:
+    server_close(peersocket);
     server_close(filecpy_socket);
     virCommandFree(criu_cmd);
     VIR_FREE(predump_path);
     VIR_FREE(data->path);
-    return (void*)0;
+    VIR_FREE(data);
+    return (void*)-1;
 }
 
 static int
@@ -303,7 +314,7 @@ doPreDumps(const char* dir_path,
           char** dump_path_ret,
           struct lxc_container *cont,
           struct migrate_opts *opts,
-          int filecpy_socket ATTRIBUTE_UNUSED)
+          int filecpy_socket)
 {
     int i;
     char *predump_path;
@@ -377,22 +388,21 @@ doPreDumps(const char* dir_path,
 static bool
 doNormalDump(struct lxc_container *cont,
              struct migrate_opts *opts,
-             int filecpy_socket ATTRIBUTE_UNUSED)
+             int filecpy_socket)
 {
     struct timeval pre_dump, post_dump, dump_runtime;
-   // statustype_t status;
+    statustype_t status;
     VIR_DEBUG("performing (final) normal migration...");
     opts->stop = true;
 
-   /* status = client_receive_status(filecpy_socket);
+    status = client_receive_status(filecpy_socket);
     if (status != STATUS_RDY) {
         virReportError(VIR_ERR_OPERATION_FAILED, "received status %d instead of STATUS_RDY during normal dump.", status);
         return false;
     }
-VIR_DEBUG("tested");
     if (server_send_status(filecpy_socket, STATUS_END) < 0)
         return false;
-*/
+
     gettimeofday(&pre_dump, NULL);
     if (cont->migrate(cont, MIGRATE_DUMP, opts, sizeof(opts))!=0) {
         VIR_DEBUG("migrate failed");
@@ -418,7 +428,7 @@ fprintf(time_file, "%ld.%06ld ", (long int)dump_runtime.tv_sec, (long int)dump_r
 bool
 startCopyProc(const char* pageserver_address,
 	          const char* pageserver_port,
-              const char* nc_port ATTRIBUTE_UNUSED,
+              const char* nc_port,
               const char* image_path,
               struct lxc_container* cont,
               bool live)
@@ -426,8 +436,6 @@ startCopyProc(const char* pageserver_address,
     int ret = false;
     int filecpy_socket = -1;
     struct migrate_opts opts;
-    const char* copy_arglist[] = {"copyclient.sh", image_path, pageserver_address,
-                                  "1234", NULL};
     opts.directory = (char*)image_path;
     opts.verbose = true;
     opts.stop = false;
@@ -435,10 +443,10 @@ startCopyProc(const char* pageserver_address,
     opts.pageserver_port = (char*)pageserver_port;
     opts.predump_dir = NULL;
 
-  /*  if ((filecpy_socket = client_connect(pageserver_address, nc_port)) < 0) {
+    if ((filecpy_socket = client_connect(pageserver_address, nc_port)) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, _("could not connect to filecpy server at %s:%s"), pageserver_address, nc_port);
         return false;
-    }*/
+    }
     VIR_DEBUG("starting migration...");
     if (live) {
         char prev_path[5];
@@ -461,21 +469,26 @@ startCopyProc(const char* pageserver_address,
         VIR_DEBUG("finished normal dump");
         VIR_FREE(dump_path);
     } else {
+        char *subdir = NULL;
+        if (asprintf(&subdir, "%s/0", opts.directory) < 0)
+            goto err;
+        opts.directory = subdir;
         VIR_DEBUG("doing non live dump");
         if (!doNormalDump(cont, &opts, filecpy_socket)) {
+            free(subdir);
 	        goto err;
 	    }
+        free(subdir);
     }
     VIR_DEBUG("sending dir");
-    if (lxctoolsRunSync(copy_arglist) != 0) {
-  //  if (client_senddir(image_path) < 0) {
+    if (client_senddir(image_path) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "an error occured during senddir from path %s", image_path);
         goto err;
     }
     VIR_DEBUG("criu client finished successfully, copy client finished successfulley");
     ret = true;
  err:
-    //client_close(filecpy_socket);
+   // client_close(filecpy_socket);
     return ret;
 }
 
@@ -483,80 +496,116 @@ bool startCopyServer(struct lxctools_migrate_data* md,
                      const char* criu_port,
                      const char* copy_port,
                      const char* path,
-                     bool live)
+                     bool live ATTRIBUTE_UNUSED)
 {
-    int criu_ret = 0;
+   // int criu_ret = 0;
     //int filecpy_socket = -1;
     char* pathcpy;
-    virCommandPtr criu_cmd;
-    const char* criu_arglist[] = {"criu", "page-server", "--images", path,
-                                  "--port", criu_port,
-                                  NULL};
-    const char* copy_arglist[] = {"copysrv.sh", "1234", path, NULL};
+    //virCommandPtr criu_cmd;
+  //  const char* criu_arglist[] = {"criu", "page-server", "--images", path,
+   //                               "--port", criu_port,
+  //                                NULL};
+//    const char* copy_arglist[] = {"copysrv.sh", copy_port, path, NULL};
 
     if (VIR_STRDUP(pathcpy, path) < 0)
         return false;
 
-    if (!live) {
-      /*  if ((filecpy_socket = server_start(copy_port)) < 0) {
+  /*  if (!live) {
+        if ((filecpy_socket = server_start(copy_port)) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED,
                            _("failed to start filecopy server at port '%s'"),
                              copy_port);
             return -1;
         }
-*/
+
         criu_cmd = virCommandNewArgs(criu_arglist);
         criu_ret = virCommandRunAsync(criu_cmd, &md->criusrv_pid);
 
-      /*  if (server_send_status(filecpy_socket, STATUS_RDY) < 0) {
+        if (server_send_status(filecpy_socket, STATUS_RDY) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("sending STATUS_RDY failed"));
             server_close(filecpy_socket);
             virCommandFree(criu_cmd);
             return -1;
-        }*/
-       /* if (server_receive_files(filecpy_socket, path) < 0) {
+        }
+        if (server_receive_files(filecpy_socket, path) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED,
                            "failed to receive files to path '%s'.",
                            path);
             server_close(filecpy_socket);
             virCommandFree(criu_cmd);
             return -1;
-        }*/
-        //server_close(filecpy_socket);
+        }
+        server_close(filecpy_socket);
         virCommandFree(criu_cmd);
-    } else {
-        startServerThread(pathcpy, criu_port, copy_port, &md->server_thread);
-    }
-    lxctoolsRunAsync(copy_arglist, &md->copysrv_pid);
+    } else {*/
+    startServerThread(pathcpy, criu_port, copy_port, &md->server_thread);
+   // }
+ //   copy_ret = lxctoolsRunAsync(copy_arglist, &md->copysrv_pid);
 
-    VIR_DEBUG("criu server started asynchronously (%d), copy server started", criu_ret);
-    return (criu_ret == 0);
+/*    VIR_DEBUG("criu server started asynchronously (%d), copy server started", criu_ret);
+    return (criu_ret == 0);*/
+    return 1;
 }
 
 
-bool
+/* return number of migration iterations performed or -1 on error */
+int
 waitForMigrationProcs(struct lxctools_migrate_data* md)
 {
-    bool ret = true;
+    int ret = -1;
+    void* thread_res;
+    int error_num;
     if (md->criusrv_pid > 0 &&
        lxctoolsWaitPID(md->criusrv_pid) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED,
                            _("waiting for criu process failed (pid: %d)"),
                            md->criusrv_pid);
-            ret = false;
+            goto error;
     } else if (md->criusrv_pid == 0 &&
                md->server_thread != NULL) {
-        if (pthread_cancel(*md->server_thread) != 0)
-            VIR_DEBUG("thread could not be canceled. It probably already finished.");
+        struct timespec timeout;
+        timeout.tv_sec = time(NULL);
+        timeout.tv_sec += 5;
+        if ((error_num= pthread_timedjoin_np(*md->server_thread, &thread_res, &timeout)) != 0) {
+            if (error_num != EBUSY && error_num != ETIMEDOUT) {
+                virReportError(VIR_ERR_OPERATION_FAILED,
+                               "%s", _("thread join failed"));
+                goto error;
+            } else {
+                if(error_num == EBUSY) VIR_DEBUG("EBUSY");
+                else if (error_num == ETIMEDOUT) VIR_DEBUG("ETIMEDOUT");
+                if (pthread_cancel(*md->server_thread) != 0)
+                    VIR_DEBUG("thread could not be canceled. It probably already finished.");
+                if (pthread_join(*md->server_thread, &thread_res) != 0) {
+                    virReportError(VIR_ERR_OPERATION_FAILED,
+                                   "%s", _("thread did not join after cancellation"));
+                    VIR_FREE(md->server_thread);
+                    md->server_thread = NULL;
+                    goto error;
+                } else if (thread_res == PTHREAD_CANCELED) {
+                    VIR_DEBUG("thread was canceled");
+                    VIR_FREE(md->server_thread);
+                    md->server_thread = NULL;
+                    goto error;
+                }
+            }
+        } else {
+            ret = *(int*)thread_res;
+            VIR_FREE(thread_res);
+            VIR_FREE(md->server_thread);
+            md->server_thread = NULL;
+            return ret;
+        }
     }
-    if (md->copysrv_pid > 0 &&
+  /*  if (md->copysrv_pid > 0 &&
         lxctoolsWaitPID(md->copysrv_pid) < 0) {
             virReportError(VIR_ERR_OPERATION_FAILED,
                            _("waiting for copy process failed (pid: %d)"),
                            md->criusrv_pid);
-            ret = false;
-    }
+            goto error;
+    }*/
+ error:
     return ret;
 }
 

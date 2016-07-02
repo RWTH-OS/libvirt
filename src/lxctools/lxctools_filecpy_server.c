@@ -35,15 +35,17 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include "virlog.h"
+//#include "virlog.h"
 #include "virerror.h"
 
 #include "lxctools_filecpy_server.h"
 
+#include <stdio.h>
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
 
-VIR_LOG_INIT("lxctools.lxctools_filecpy_server");
+//VIR_LOG_INIT("lxctools.lxctools_filecpy_server");
 
+#define VIR_DEBUG(...) printf(__VA_ARGS__); printf("\n");
 
 struct server_data {
     ssize_t available;
@@ -56,7 +58,7 @@ int server_start(const char* port)
 {
     int sock;
     struct sockaddr_in addr;
-
+    int opt_true = 1;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -66,6 +68,8 @@ int server_start(const char* port)
         VIR_DEBUG("failed to create socket\n");
         return -1;
     }
+
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt_true, sizeof(int));
 
     if (bind(sock, (struct sockaddr*) &addr, sizeof(addr)) < 0) {
         VIR_DEBUG("failed to bind\n");
@@ -97,6 +101,23 @@ int server_connect_block(int sock)
 
 static int data_handler_stringify(const char* data, size_t size, void* param)
 {
+    char** string = (char**)param;
+    char* oldstring = *string;
+    static size_t strpos = 0;
+    if (oldstring == NULL) {
+        strpos = 0;
+        *string = malloc(size);
+    } else {
+        *string = malloc(strpos+size);
+        free(oldstring);
+    }
+    if (*string == NULL)
+        return -1;
+    memcpy((*string)+strpos, data, size);
+    strpos += size;
+    return 0;
+}
+    /*
     VIR_DEBUG("stringify called");
     static size_t string_size;
     char** string = (char**)param;
@@ -113,7 +134,7 @@ static int data_handler_stringify(const char* data, size_t size, void* param)
     strncat(*string, data, size);
     VIR_DEBUG("strigify finished");
     return 0;
-}
+}*/
 
 static int data_handler_filewriter(const char* data, size_t size, void* param)
 {
@@ -151,6 +172,8 @@ static size_t server_receive_size(int socket, struct server_data *data)
 {
     size_t size;
     ssize_t recvbuf;
+
+//VIR_DEBUG("i_begin: %lu , available: %lu", data->i_begin, data->available);
     while (data->available < sizeof(size)) {
         if (data->available > 0)
             memmove(data->buf, data->buf+data->i_begin, data->available);
@@ -172,16 +195,15 @@ static int server_receive(int socket, struct server_data *data, int (*data_handl
     size_t size;
 
     size = server_receive_size(socket, data);
-VIR_DEBUG("expecting %lu bytes\n", size);
+//VIR_DEBUG("expecting %lu bytes\n", size);
+//VIR_DEBUG("i_begin: %lu , available: %lu", data->i_begin, data->available);
     //Data size is bigger than what is available -> do multiple retrieval iterations
     while (data->available >= 0 && size > data->available) {
-VIR_DEBUG("19");
         if (data_handler(data->buf+data->i_begin, data->available, data_handler_param) < 0) {
             VIR_DEBUG("data handler error!\n");
             return -1;
         }
         size -= data->available;     //all available data has been consumed
-VIR_DEBUG("data size was bigger");
         //Receive new data and reset i_begin
         if ((data->available = recv(socket, data->buf, 4096, 0)) < 0) {
             VIR_DEBUG("error while recv'ing\n");
@@ -189,13 +211,11 @@ VIR_DEBUG("data size was bigger");
         }
         data->i_begin = 0;
     }
-VIR_DEBUG("20");
     //available data is bigger than data size -> retrieve and update i_begin and available
     if (data_handler(data->buf+data->i_begin, size, data_handler_param) < 0) {
         VIR_DEBUG("data handler error!\n");
         return -1;
     }
-VIR_DEBUG("data size was smaller");
     data->i_begin += size;
     data->available -= size;
     return 0;
@@ -219,17 +239,17 @@ static int recv_lnk(int socket, struct server_data* server_data, int dir_fd)
         VIR_DEBUG("server_receive was not successfull (on lnkname)!");
         goto err;
     }
-    VIR_DEBUG("about to receive link '%s'", lnkname);
 
     if (server_receive(socket, server_data, data_handler_stringify, &lnkdest) != 0) {
         VIR_DEBUG("server_receive was not successfull (on lnkdest)!");
         goto err;
     }
-
+    VIR_DEBUG("%d", dir_fd);
+/*    VIR_DEBUG("received link '%s'->'%s'", lnkname, lnkdest);
     if (symlinkat(lnkdest, dir_fd, lnkname) < 0) {
         VIR_DEBUG("symlinkat: errno: %s", strerror(errno));
         goto err;
-    }
+    }*/
 
     VIR_DEBUG("received symlink '%s' (%lu byte(s)) -> '%s' (%lu byte(s)).", lnkname, strlen(lnkname)+1, lnkdest, strlen(lnkdest)+1);
 
@@ -247,7 +267,7 @@ static int recv_reg(int socket, struct server_data* server_data, int dir_fd)
   //  struct stat statdata;
     int ret = -1;
     
-    VIR_DEBUG("receiving new regular file");
+    //VIR_DEBUG("receiving new regular file");
 
     if (server_receive(socket, server_data, data_handler_stringify, &msg) != 0) {
         VIR_DEBUG("server_receive was not successfull (on filename)!");
@@ -267,13 +287,12 @@ static int recv_reg(int socket, struct server_data* server_data, int dir_fd)
         VIR_DEBUG("server_received was not successfull!");
         goto err;
     }
-VIR_DEBUG("received reg!");
  /*   if (fstat(filefd, &statdata)) {
         VIR_DEBUG("cannot stat file");
         goto err;
     }
-
-    VIR_DEBUG("received file '%s' (%lu byte(s)).", msg, statdata.st_size);*/
+*/
+    VIR_DEBUG("received file '%s'.", msg);
 
     ret = 0;
 err:
@@ -290,7 +309,6 @@ static int recv_dir(int socket, struct server_data* server_data, int dir_fd)
         VIR_DEBUG("server_receive was not successfull (on dir)!");
         goto err;
     }
-    VIR_DEBUG("about to receive dir '%s' at fd %d", dirname, dir_fd);
 
     //permission 664
     if (mkdirat(dir_fd, dirname, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IXOTH) < 0) {
@@ -359,16 +377,17 @@ int server_receive_files(int socket, const char* dir)
             VIR_DEBUG("received something that is not supported (i.e. not a regular file, a symlink or a folder...");
             goto err;
         }
-        if (server_send_status(socket, STATUS_ACK) < 0)
+        if (server_send_status(socket, STATUS_ACK) < 0) {
+            VIR_DEBUG("could not send ACK");
             goto err;
-        VIR_DEBUG("send ack"); 
+        }
         filetype = server_receive_type(socket, server_data);
         VIR_DEBUG("received type %d", filetype);
     }
     VIR_DEBUG("received end token");
     ret = 0;
  err:
-    free(server_data);
+   // free(server_data);
     return ret;
 }
 
