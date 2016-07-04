@@ -175,7 +175,7 @@ serverThread(void* arg)
     const char* live_additions[] = { "--prev-images-dir" };
     int i;
     pid_t pid;
-    char *predump_path;
+    char *predump_path = NULL;
     char subdir[3];
     char prev_path[6];
     int filecpy_socket = -1;
@@ -224,7 +224,6 @@ serverThread(void* arg)
         criu_arglist[3] = predump_path;
         criu_cmd = virCommandNewArgs(criu_arglist);
 
-//TODO: error here
         if (virCommandRunAsync(criu_cmd, &pid)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu page-server returned bad exit code"));
@@ -241,12 +240,10 @@ usleep(1000);
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("criu page-server exited unsuccessfully."));
             virCommandFree(criu_cmd);
-            VIR_FREE(predump_path);
+            //VIR_FREE(predump_path);
             return (void*)-1;
         }
 
-        virCommandFree(criu_cmd);
-        VIR_FREE(predump_path);
 
         sprintf(prev_path, "../%d", i);
         criu_arglist[7] = prev_path;
@@ -255,28 +252,26 @@ usleep(1000);
             criu_arglist[6] = live_additions[0];
         }
     }
-printf("before receive\n");
     if (server_receive_files(peersocket, data->path) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        "failed to receive files to path '%s'.",
                        data->path);
         goto cleanup;
     }
-printf("after receive\n");
     server_close(peersocket);
-    server_close(filecpy_socket);
-    VIR_FREE(predump_path);
+    //free(predump_path);
     VIR_FREE(data->path);
+    virCommandFree(criu_cmd);
     VIR_FREE(data);
     if (VIR_ALLOC(ret) < 0) goto cleanup;
     *ret = i;
     printf("thread ended\n");
     return (void*)(ret);
  cleanup:
+    printf("performing thread cleanup\n");
     server_close(peersocket);
-    server_close(filecpy_socket);
     virCommandFree(criu_cmd);
-    VIR_FREE(predump_path);
+   // free(predump_path);
     VIR_FREE(data->path);
     VIR_FREE(data);
     return (void*)-1;
@@ -500,7 +495,7 @@ bool startCopyServer(struct lxctools_migrate_data* md,
 {
    // int criu_ret = 0;
     //int filecpy_socket = -1;
-    char* pathcpy;
+    char* pathcpy = NULL;
     //virCommandPtr criu_cmd;
   //  const char* criu_arglist[] = {"criu", "page-server", "--images", path,
    //                               "--port", criu_port,

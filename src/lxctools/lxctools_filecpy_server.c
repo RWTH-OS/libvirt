@@ -47,18 +47,23 @@
 
 #define VIR_DEBUG(...) printf(__VA_ARGS__); printf("\n");
 
+#define SD_BUFSIZE 1024
+
 struct server_data {
     ssize_t available;
-    char buf[4096];
+    char buf[SD_BUFSIZE];
     size_t i_begin;
 };
 
 
 int server_start(const char* port)
 {
-    int sock;
+    static int sock = -1;
     struct sockaddr_in addr;
     int opt_true = 1;
+    if (sock != -1) {
+        return sock;
+    }
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -72,7 +77,7 @@ int server_start(const char* port)
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt_true, sizeof(int));
 
     if (bind(sock, (struct sockaddr*) &addr, sizeof(addr)) < 0) {
-        VIR_DEBUG("failed to bind\n");
+        VIR_DEBUG("failed to bind: %d:%s\n", errno, strerror(errno));
         return -1;
     }
 
@@ -138,7 +143,7 @@ static cpytype_t server_receive_type(int socket, struct server_data *data)
     while (data->available < sizeof(type)) {
         if (data->available > 0)
             memmove(data->buf, data->buf+data->i_begin, data->available);
-        if ((recvbuf = recv(socket, data->buf+data->available, 4096-data->available, 0)) < 0) {
+        if ((recvbuf = recv(socket, data->buf+data->available, SD_BUFSIZE-data->available, 0)) < 0) {
             VIR_DEBUG("error while recv'ing\n");
             return -1;;
         }
@@ -160,7 +165,7 @@ static size_t server_receive_size(int socket, struct server_data *data)
     while (data->available < sizeof(size)) {
         if (data->available > 0)
             memmove(data->buf, data->buf+data->i_begin, data->available);
-        if ((recvbuf = recv(socket, data->buf+data->available, 4096-data->available, 0)) < 0) {
+        if ((recvbuf = recv(socket, data->buf+data->available, SD_BUFSIZE-data->available, 0)) < 0) {
             VIR_DEBUG("error while recv'ing\n");
             return -1;;
         }
@@ -188,7 +193,7 @@ static int server_receive(int socket, struct server_data *data, int (*data_handl
         }
         size -= data->available;     //all available data has been consumed
         //Receive new data and reset i_begin
-        if ((data->available = recv(socket, data->buf, 4096, 0)) < 0) {
+        if ((data->available = recv(socket, data->buf, SD_BUFSIZE, 0)) < 0) {
             VIR_DEBUG("error while recv'ing\n");
             return -1;
         }
@@ -206,10 +211,18 @@ static int server_receive(int socket, struct server_data *data, int (*data_handl
 
 int server_close(int socket)
 {
-    if (socket > 0)
-        close(socket);
-    return 0;
-
+    int error;
+    if (socket > 0) {
+        if ((error = shutdown(socket, SHUT_RDWR)) < 0) {
+            printf("ERROR: socket shutdown returned %d\n", error);
+            return -1;
+        }
+        if ((error = close(socket)) < 0) {
+            printf("ERROR: socket close returned %d\n", error);
+            return -1;
+        }
+    }
+    return -1;
 }
 
 static int recv_lnk(int socket, struct server_data* server_data, int dir_fd)
@@ -307,6 +320,7 @@ static int recv_dir(int socket, struct server_data* server_data, int dir_fd)
 
     ret = 0;
  err:
+    free(dirname);
     return ret;
 }
 
@@ -314,22 +328,18 @@ int server_receive_files(int socket, const char* dir)
 {
     //DIR* dirptr;
     int dir_fd;
-    struct server_data *server_data = NULL;
+    struct server_data server_data_s;
+    struct server_data *server_data = &server_data_s;
     cpytype_t filetype;
     int ret = -1;
-    char flushbuf[512];
+    /*char flushbuf[512];
     if ((server_data = malloc(sizeof(server_data))) == NULL) {
         VIR_DEBUG("malloc failed");
         goto err;
-    }
+    }*/
 
     server_data->available = 0;
     server_data->i_begin = 0;
-
-    //remove this!
-    while (recv(socket, flushbuf, 512, MSG_DONTWAIT) > 0) {
-        VIR_DEBUG("flushed something");
-    }
 
     if (server_send_status(socket, STATUS_ACK) < 0)
         goto err;

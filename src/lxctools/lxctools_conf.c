@@ -130,7 +130,10 @@ char* concatPaths(const char* path1, const char* path2)
     else
         retlen = path1len+path2len;
 
-    if (VIR_ALLOC_N(ret, retlen) < 0) {
+    /*if (VIR_ALLOC_N(ret, retlen) < 0) {
+        return NULL;
+    }*/
+    if ((ret = malloc(retlen)) == NULL) {
         return NULL;
     }
 

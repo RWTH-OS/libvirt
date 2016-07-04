@@ -31,6 +31,6 @@
 int client_connect(const char* address, const char* port);
 statustype_t client_receive_status(int socket);
 int client_senddir(const char* dir);
-void client_close(int sock);
+int client_close(int sock);
 
 #endif /* LXCTOOLS_FILECPY_CLIENT_H */
