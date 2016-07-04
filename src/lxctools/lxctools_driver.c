@@ -1082,7 +1082,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
     if(vm)
         virObjectUnlock(vm);
 
-    VIR_FREE(tmpfs_path);
+    //free(tmpfs_path);
     return ret;
 }
 
@@ -1199,14 +1199,17 @@ timelog("setup");
     virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF, VIR_DOMAIN_SHUTOFF_MIGRATED);
 
     ret = 0;
+    VIR_DEBUG("test");
 #ifdef LXCTOOLS_EVALUATION
 timelog("complete-dump");
 #endif
+VIR_DEBUG("teset2");
 cleanup:
     if(vm)
         virObjectUnlock(vm);
 
-    VIR_FREE(tmpfs_path);
+    //VIR_FREE(tmpfs_path);
+VIR_DEBUG("finish perform");
     return ret;
 }
 
@@ -1238,7 +1241,7 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
 
     bool live_migration = (flags & VIR_MIGRATE_LIVE);
     virCheckFlags(LXCTOOLS_MIGRATION_FLAGS, NULL);
-
+VIR_DEBUG("start finish");
     if (virTypedParamsValidate(params, nparams, LXCTOOLS_MIGRATION_PARAMETERS) < 0)
         goto cleanup;
 
@@ -1284,7 +1287,7 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
 
         goto cleanup;
     }
-
+VIR_DEBUG("waitfor");
     if ((migration_iterations = waitForMigrationProcs(driver->md)) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("error while waiting on migration process to exit."));
@@ -1305,7 +1308,9 @@ lxctoolsDomainMigrateFinish3Params(virConnectPtr dconn,
                        _("criu binary not found in PATH"));
         goto cleanup;
     }
+    VIR_DEBUG("about to restore");
     restoreContainer(cont, live_migration, migration_iterations);
+    VIR_DEBUG("restored");
     if (!cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("something went wrong while trying to restore container '%s'"),

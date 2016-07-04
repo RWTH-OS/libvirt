@@ -78,14 +78,20 @@ static int walkdir_send_type(int sock, cpytype_t type)
     return 0;
 }
 
-void client_close(int sock)
+int client_close(int sock)
 {
-    /*if (walkdir_send_type(sock, TYPE_ENDTOKEN) < 0) {
-        VIR_DEBUG("error while sending end_token.\n");
-    } else {
-        VIR_DEBUG("sent end token\n");
-    }*/
-    close(sock);
+    int error;
+    if (sock > 0) {
+        if ((error = shutdown(sock, SHUT_RDWR)) < 0) {
+            VIR_DEBUG("ERROR: socket shutdown returned %d", error);
+            return -1;
+        }
+        if ((error = close(sock)) < 0) {
+            VIR_DEBUG("ERROR: socket close returned %d", error);
+            return -1;
+        }
+    }
+    return -1;
 }
 
 static int walkdir_send_name(int sock, const char* name, size_t filename_length)
