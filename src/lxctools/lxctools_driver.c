@@ -43,6 +43,8 @@
 #include "datatypes.h"
 #include "virbuffer.h"
 #include "nodeinfo.h"
+#include "virhostcpu.h"
+#include "virhostmem.h"
 #include "viralloc.h"
 #include "virfile.h"
 #include "virtypedparam.h"
@@ -82,7 +84,7 @@ static char *lxctoolsDomainGetXMLDesc(virDomainPtr dom, unsigned int flags) {
         goto cleanup;
     }
 
-    ret = virDomainDefFormat(vm->def,
+    ret = virDomainDefFormat(vm->def, driver->caps,
                              virDomainDefFormatConvertXMLFlags(flags));
 
  cleanup:
@@ -94,6 +96,7 @@ static char *lxctoolsDomainGetXMLDesc(virDomainPtr dom, unsigned int flags) {
 static int
 lxctoolsDomainDefPostParse(virDomainDefPtr def,
                            virCapsPtr caps ATTRIBUTE_UNUSED,
+                           unsigned int parseFlags ATTRIBUTE_UNUSED,
                            void *opaque ATTRIBUTE_UNUSED)
 {
     /* fill the init path */
@@ -109,6 +112,7 @@ static int
 lxctoolsDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
                                 const virDomainDef *def ATTRIBUTE_UNUSED,
                                 virCapsPtr caps ATTRIBUTE_UNUSED,
+                                unsigned int parseFlags ATTRIBUTE_UNUSED,
                                 void *opaque ATTRIBUTE_UNUSED)
 {
     /* forbid capabilities mode hostdev in this kind of hypervisor */
@@ -121,8 +125,8 @@ lxctoolsDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
         return -1;
     }
 
-    if (virDomainDeviceDefCheckUnsupportedMemoryDevice(dev) < 0)
-        return -1;
+    //if (virDomainDeviceDefCheckUnsupportedMemoryDevice(dev) < 0)
+    //    return -1;
 
     return 0;
 }
@@ -715,8 +719,9 @@ lxctoolsConnectSupportsFeature(virConnectPtr conn ATTRIBUTE_UNUSED, int feature)
 }
 
 static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
-					  virConnectAuthPtr auth ATTRIBUTE_UNUSED,
-					  unsigned int flags)
+					                        virConnectAuthPtr auth ATTRIBUTE_UNUSED,
+                                            virConfPtr conf ATTRIBUTE_UNUSED,
+					                        unsigned int flags)
 {
     struct lxctools_driver *driver = NULL;
     char* lxcpath = NULL;
@@ -838,7 +843,7 @@ lxctoolsNodeGetCPUStats(virConnectPtr conn ATTRIBUTE_UNUSED,
                                    int *nparams,
                                    unsigned int flags)
 {
-    return nodeGetCPUStats(cpuNum, params, nparams, flags);
+    return virHostCPUGetStats(cpuNum, params, nparams, flags);
 }
 
 static int
@@ -848,7 +853,7 @@ lxctoolsNodeGetMemoryStats(virConnectPtr conn ATTRIBUTE_UNUSED,
                                       int *nparams,
                                       unsigned int flags)
 {
-    return nodeGetMemoryStats(cellNum, params, nparams, flags);
+    return virHostMemGetStats(cellNum, params, nparams, flags);
 }
 
 static int
@@ -857,14 +862,14 @@ lxctoolsNodeGetCellsFreeMemory(virConnectPtr conn ATTRIBUTE_UNUSED,
                                int startCell,
                                int maxCells)
 {
-    return nodeGetCellsFreeMemory(freeMems, startCell, maxCells);
+    return virHostMemGetCellsFree(freeMems, startCell, maxCells);
 }
 
 static unsigned long long
 lxctoolsNodeGetFreeMemory(virConnectPtr conn ATTRIBUTE_UNUSED)
 {
     unsigned long long freeMem;
-    if(nodeGetMemory(NULL, &freeMem) < 00)
+    if(virHostMemGetInfo(NULL, &freeMem) < 00)
         return 0;
     return freeMem;
 }
@@ -875,7 +880,7 @@ lxctoolsNodeGetCPUMap(virConnectPtr conn ATTRIBUTE_UNUSED,
                       unsigned int *online,
                       unsigned int flags)
 {
-    return nodeGetCPUMap(cpumap, online, flags);
+    return virHostCPUGetMap(cpumap, online, flags);
 }
 
 #ifdef LXCTOOLS_EVALUATION
@@ -941,7 +946,7 @@ init_time();
                        "%s", _("domain is not running"));
         goto cleanup;
     }
-    xml = virDomainDefFormat(vm->def, VIR_DOMAIN_DEF_FORMAT_SECURE);
+    xml = virDomainDefFormat(vm->def, driver->caps, VIR_DOMAIN_DEF_FORMAT_SECURE);
  cleanup:
     if (vm)
         virObjectUnlock(vm);
@@ -1199,17 +1204,14 @@ timelog("setup");
     virDomainObjSetState(vm, VIR_DOMAIN_SHUTOFF, VIR_DOMAIN_SHUTOFF_MIGRATED);
 
     ret = 0;
-    VIR_DEBUG("test");
 #ifdef LXCTOOLS_EVALUATION
 timelog("complete-dump");
 #endif
-VIR_DEBUG("teset2");
 cleanup:
     if(vm)
         virObjectUnlock(vm);
 
     //VIR_FREE(tmpfs_path);
-VIR_DEBUG("finish perform");
     return ret;
 }
 
@@ -1287,7 +1289,6 @@ VIR_DEBUG("start finish");
 
         goto cleanup;
     }
-VIR_DEBUG("waitfor");
     if ((migration_iterations = waitForMigrationProcs(driver->md)) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("error while waiting on migration process to exit."));
@@ -1455,7 +1456,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
     virCheckFlags(VIR_DOMAIN_DEFINE_VALIDATE, NULL);
 
     if (flags & VIR_DOMAIN_DEFINE_VALIDATE)
-        parse_flags |= VIR_DOMAIN_DEF_PARSE_VALIDATE;
+        parse_flags |= VIR_DOMAIN_DEF_PARSE_VALIDATE_SCHEMA;
 
     if ((vmdef = virDomainDefParseString(xml, driver->caps, driver->xmlopt,
                                          parse_flags)) == NULL)

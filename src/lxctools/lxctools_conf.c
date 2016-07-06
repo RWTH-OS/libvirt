@@ -622,10 +622,10 @@ int lxctoolsCheckStaticConfig(virDomainDefPtr def)
         return -1;
     }
 
-    if (def->mem.max_memory != nodeinfo->memory) {
+ /*   if (def->mem.max_memory != nodeinfo->memory) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("setting max_memory is unssuported"));
         return -1;
-    }
+    }*/
 
     if (def->cpumask && virBitmapLastSetBit(def->cpumask) >= nodeinfo->cpus) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("to many cpus set in cpuset"));
@@ -651,7 +651,7 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
                     if (lxctoolsConffileSetItem(conffile, "lxc.include", (const char*)node->children->content) < 0)
                         goto cleanup;
                 } else if (xmlStrcmp(node->children->name, (const xmlChar*)"lxctools:livemigration-iterations")) {
-                    VIR_DEBUG("found migration iterations: %d", node->children->content);
+                    VIR_DEBUG("found migration iterations: %s", node->children->content);
                 }
 
             } else {
@@ -691,7 +691,7 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
 
     if ((item_str = virBitmapFormat(def->cpumask)) == NULL) 
         goto cleanup;
-
+printf("'%s'\n", item_str);
     if (item_str[0] != '\0') {
         if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.cpuset.cpus", item_str) < 0)
             goto cleanup;
@@ -703,7 +703,7 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     item_str = NULL;
 
     if (def->cputune.sharesSpecified) {
-        if (virAsprintf(&item_str, "%lu", def->cputune.shares) < 0)
+        if (virAsprintf(&item_str, "%llu", def->cputune.shares) < 0)
             goto cleanup;
         if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.cpu.shares", item_str) < 0)
             goto cleanup;
@@ -738,12 +738,12 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     VIR_FREE(item_str);
     item_str = NULL;
 
-    if (def->mem.max_balloon != def->mem.cur_balloon) {
+    if (def->mem.total_memory != def->mem.cur_balloon) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("max_balloon  and cur_balloon have to have the same value. Memory ballooning is not neccessary for containerss."));
         goto cleanup;
     }
-    if (def->mem.max_balloon != 0) {
-        if (virAsprintf(&item_str, "%lluk", def->mem.max_balloon) < 0)
+    if (def->mem.total_memory != 0) {
+        if (virAsprintf(&item_str, "%lluk", def->mem.total_memory) < 0)
             goto cleanup;
         if (lxctoolsConffileSetItem(conffile, "lxc.cgroup.memory.limit_in_bytes", item_str) < 0)
             goto cleanup;
@@ -826,17 +826,21 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
         goto error;
     }
     if (item_str[0] == '\0') {
-        def->maxvcpus = nodeinfo->cpus; 
+        if (virDomainDefSetVcpusMax(def, nodeinfo->cpus) < 0)
+            goto error;
         def->cpumask = virBitmapNew(nodeinfo->cpus);
         virBitmapSetAll(def->cpumask);
     } else {
         int cpunum;
-        if ( (cpunum = virBitmapParse(item_str, '\0', &def->cpumask, nodeinfo->cpus) ) < 0) {
+        if ( (cpunum = virBitmapParse(item_str, &def->cpumask, nodeinfo->cpus) ) < 0) {
             goto error;
         }  
-        def->maxvcpus = cpunum;
+        if (virDomainDefSetVcpusMax(def, cpunum) < 0)
+            goto error;
     }
-    def->vcpus = def->maxvcpus;
+
+    if (virDomainDefSetVcpus(def, virDomainDefGetVcpusMax(def)) < 0)
+        goto error;
    
     VIR_FREE(item_str);
     item_str = NULL;
@@ -883,13 +887,15 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
         goto error;
     }
     if (item_str[0] == '\0') {
-        def->mem.max_balloon = nodeinfo->memory;
+        virDomainDefSetMemoryTotal(def, nodeinfo->memory);
     } else {
-        def->mem.max_balloon = memToULL(item_str); 
+        virDomainDefSetMemoryTotal(def, memToULL(item_str)); 
     }
-    def->mem.cur_balloon = def->mem.max_balloon;
-    def->mem.max_memory = nodeinfo->memory;
-    def->mem.memory_slots = 1; //maybe delete max_memory alltogether
+
+
+    def->mem.cur_balloon = virDomainDefGetMemoryTotal(def);
+//    def->mem.max_memory = nodeinfo->memory;
+//    def->mem.memory_slots = 1; //maybe delete max_memory alltogether
 
     VIR_FREE(item_str);
     item_str = NULL;
@@ -908,7 +914,7 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
     }
     if (item_str[0] != '\0') {
         virBitmapPtr nodeset;
-        if (virBitmapParse(item_str, '\0', &nodeset, nodeinfo->nodes) < 0) {
+        if (virBitmapParse(item_str, &nodeset, nodeinfo->nodes) < 0) {
             goto error;
         }  
         if (virDomainNumatuneSet(def->numa,
