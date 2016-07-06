@@ -640,24 +640,24 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     int ret = -1;
     char *item_str = NULL;
 
-    if (lxctoolsConffileRemoveItems(conffile, "lxc.include") < 0)
+ /*   if (lxctoolsConffileRemoveItems(conffile, "lxc.include") < 0)
         goto cleanup;
 
     if (def->metadata != NULL) {
         xmlNodePtr node = def->metadata->children;
         while (node != NULL) {
             if (node->children != NULL && node->children->type == XML_TEXT_NODE) {
+
                 if (xmlStrcmp(node->children->name, (const xmlChar*)"lxctools:include")) {
+
                     if (lxctoolsConffileSetItem(conffile, "lxc.include", (const char*)node->children->content) < 0)
                         goto cleanup;
                 } else if (xmlStrcmp(node->children->name, (const xmlChar*)"lxctools:livemigration-iterations")) {
                     VIR_DEBUG("found migration iterations: %s", node->children->content);
                 }
-
             } else {
                 VIR_DEBUG("found include node but no child text node");
             }
-
             node = node->next;
         }
         if (node == NULL) {
@@ -667,7 +667,7 @@ int lxctoolsSetBasicConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
 
         }
     }
-
+*/
     if (( item_str = lxctoolsConffileGetItem(conffile, "lxc.utsname")) == NULL)
         goto cleanup;
     if (item_str[0] == '\0') {
