@@ -775,13 +775,11 @@ OPENVZ_DRIVER_SOURCES =						\
 		openvz/openvz_driver.c openvz/openvz_driver.h   \
 		openvz/openvz_util.c openvz/openvz_util.h
 
-LXCTOOLS_DRIVER_SOURCES = lxctools/lxctools_driver.h lxctools/lxctools_driver.c \
+LXCTOOLS_DRIVER_SOURCES =					\
 		lxctools/lxctools_conf.c			\
 		lxctools/lxctools_conf.h			\
 		lxctools/lxctools_driver.c			\
 		lxctools/lxctools_driver.h			\
-		lxctools/lxctools_util.c			\
-		lxctools/lxctools_util.h			\
 		lxctools/lxctools_conffile.c		\
 		lxctools/lxctools_conffile.h		\
 		lxctools/lxctools_filecpy_client.c	\
@@ -2093,6 +2091,12 @@ USED_SYM_FILES += $(srcdir)/libvirt_openvz.syms
 else ! WITH_OPENVZ
 SYM_FILES += $(srcdir)/libvirt_openvz.syms
 endif ! WITH_OPENVZ
+
+#if WITH_LXCTOOLS
+#USED_SYM_FILES += $(srcdir)/libvirt_lxctools.syms
+#else ! WITH_LXCTOOLS
+#SYM_FILES += $(srcdir)/libvirt_lxctools.syms
+#endif ! WITH_LXCTOOLS
 
 if WITH_VMX
 USED_SYM_FILES += $(srcdir)/libvirt_vmx.syms

@@ -28,6 +28,7 @@
 #include <lxc/lxccontainer.h>
 
 #include "domain_conf.h"
+# include "virdomainobjlist.h"
 #include "lxctools_conffile.h"
 
 struct lxctools_driver {
