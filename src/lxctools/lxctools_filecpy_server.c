@@ -172,7 +172,7 @@ static size_t server_receive_size(int socket, struct server_data *data)
         data->available+=recvbuf;
         data->i_begin = 0;
     }
-    size = *((size_t*)(data->buf+data->i_begin));
+    memcpy(&size, data->buf+data->i_begin, sizeof(size_t));
     data->i_begin += sizeof(size);
     data->available -= sizeof(size);
     return size;
