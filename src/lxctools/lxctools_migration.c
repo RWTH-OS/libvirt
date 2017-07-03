@@ -66,17 +66,18 @@ int restoreContainer(struct lxc_container *cont, bool live ATTRIBUTE_UNUSED, int
                                   tmpfs_suffix)) == NULL)
         goto cleanup;
 
-	struct migrate_opts opts;
-	opts.directory = tmpfs_path;
-	opts.verbose = true;
-	opts.stop = false;
-	opts.pageserver_address = NULL;
-	opts.pageserver_port = NULL;
-	opts.predump_dir = NULL;
+    struct migrate_opts opts;
+    opts = (const struct migrate_opts){0};
+    opts.directory = tmpfs_path;
+    opts.verbose = true;
+    opts.stop = false;
+    opts.pageserver_address = NULL;
+    opts.pageserver_port = NULL;
+    opts.predump_dir = NULL;
 
     if (cont->migrate(cont, MIGRATE_RESTORE, &opts, sizeof(opts))!=0) {
-		virReportError(VIR_ERR_OPERATION_FAILED, "%s",
-                            _("lxc api call failed. check lxc log for more information"));
+        virReportError(VIR_ERR_OPERATION_FAILED, "%s",
+                       _("lxc api call failed. check lxc log for more information"));
         goto cleanup;
     }
 
@@ -271,7 +272,7 @@ usleep(1000);
     printf("performing thread cleanup\n");
     server_close(peersocket);
     virCommandFree(criu_cmd);
-   // free(predump_path);
+    // free(predump_path);
     VIR_FREE(data->path);
     VIR_FREE(data);
     return (void*)-1;
