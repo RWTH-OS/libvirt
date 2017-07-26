@@ -213,9 +213,9 @@ lxctoolsDomainRestoreFlags(virConnectPtr conn, const char* from,
     }
 
     if(!cont->may_control(cont)) {
-	virReportError(VIR_ERR_OPERATION_DENIED, "%s",
-		       _("domain may not be controlled"));
-	goto cleanup;
+        virReportError(VIR_ERR_OPERATION_DENIED, "%s",
+                       _("domain may not be controlled"));
+        goto cleanup;
     }
 
     if(!criuExists()) {
@@ -289,9 +289,9 @@ lxctoolsDomainSaveFlags(virDomainPtr domain, const char* to,
     }
 
     if (!cont->may_control(cont)) {
-	virReportError(VIR_ERR_OPERATION_DENIED, "%s",
-		       _("domain may not be controlled"));
-	goto cleanup;
+        virReportError(VIR_ERR_OPERATION_DENIED, "%s",
+                       _("domain may not be controlled"));
+        goto cleanup;
     }
 
     if (!criuExists()) {
@@ -719,9 +719,9 @@ lxctoolsConnectSupportsFeature(virConnectPtr conn ATTRIBUTE_UNUSED, int feature)
 }
 
 static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
-					                        virConnectAuthPtr auth ATTRIBUTE_UNUSED,
+                                            virConnectAuthPtr auth ATTRIBUTE_UNUSED,
                                             virConfPtr conf ATTRIBUTE_UNUSED,
-					                        unsigned int flags)
+                                            unsigned int flags)
 {
     struct lxctools_driver *driver = NULL;
     char* lxcpath = NULL;
@@ -738,7 +738,7 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
            return VIR_DRV_OPEN_DECLINED;
        }
        if (!virFileIsDir(lxcpath)) {
-	   return VIR_DRV_OPEN_DECLINED;
+           return VIR_DRV_OPEN_DECLINED;
        }
 
        if(!(conn->uri = virURIParse("lxctools:///"))) {
@@ -1299,9 +1299,9 @@ VIR_DEBUG("start finish");
     VIR_DEBUG("performed %d migration iterations", migration_iterations);
 
     if (!cont->may_control(cont)) {
-	virReportError(VIR_ERR_OPERATION_DENIED, "%s",
-		       _("domain may not be controlled"));
-	    goto cleanup;
+        virReportError(VIR_ERR_OPERATION_DENIED, "%s",
+                       _("domain may not be controlled"));
+        goto cleanup;
     }
 
     if(!criuExists()) {

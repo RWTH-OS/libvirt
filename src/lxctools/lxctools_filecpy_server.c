@@ -183,8 +183,8 @@ static int server_receive(int socket, struct server_data *data, int (*data_handl
     size_t size;
 
     size = server_receive_size(socket, data);
-//VIR_DEBUG("expecting %lu bytes\n", size);
-//VIR_DEBUG("i_begin: %lu , available: %lu", data->i_begin, data->available);
+    VIR_DEBUG("Expecting %lu bytes\n", size);
+    VIR_DEBUG("i_begin: %lu , available: %lu", data->i_begin, data->available);
     //Data size is bigger than what is available -> do multiple retrieval iterations
     while (data->available >= 0 && size > data->available) {
         if (data_handler(data->buf+data->i_begin, data->available, data_handler_param) < 0) {
@@ -326,31 +326,23 @@ static int recv_dir(int socket, struct server_data* server_data, int dir_fd)
 
 int server_receive_files(int socket, const char* dir)
 {
-    //DIR* dirptr;
+    VIR_DEBUG("Receiving file...");
     int dir_fd;
     struct server_data server_data_s;
     struct server_data *server_data = &server_data_s;
     cpytype_t filetype;
     int ret = -1;
-    /*char flushbuf[512];
-    if ((server_data = malloc(sizeof(server_data))) == NULL) {
-        VIR_DEBUG("malloc failed");
-        goto err;
-    }*/
 
     server_data->available = 0;
     server_data->i_begin = 0;
 
-    if (server_send_status(socket, STATUS_ACK) < 0)
-        goto err;
-    filetype = server_receive_type(socket, server_data);
-
-  /*  if ((dirptr = opendir(dir)) == NULL) {
-        VIR_DEBUG("failed to openddir");
+    if (server_send_status(socket, STATUS_ACK) < 0) {
+        VIR_DEBUG("could not send ACK");
         goto err;
     }
+    filetype = server_receive_type(socket, server_data);
 
-    VIR_DEBUG("opened dir '%s' fd %d", dir, dirfd(dirptr)); */
+    VIR_DEBUG("Opening dir '%s'", dir);
     if ((dir_fd = open(dir, O_DIRECTORY | O_RDONLY)) < 0) {
         VIR_DEBUG("failed to open dir: %s", strerror(errno));
         goto err;
@@ -380,7 +372,6 @@ int server_receive_files(int socket, const char* dir)
     VIR_DEBUG("received end token");
     ret = 0;
  err:
-   // free(server_data);
     return ret;
 }
 
