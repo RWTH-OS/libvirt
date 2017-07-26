@@ -108,23 +108,25 @@ static int walkdir_send_name(int sock, const char* name, size_t filename_length)
 }
 static ssize_t walkdir_send_file(int sock, int file, size_t file_size)
 {
-    ssize_t sent_data;
+    VIR_DEBUG("Sending filesize (%lu bytes)...", file_size);
     if (send(sock, &file_size, sizeof(file_size), 0) != sizeof(file_size)) {
         VIR_DEBUG("error while sending filesize: %lu\n", file_size);
         return -1;
     }
-
-    sent_data = sendfile(sock, file, NULL, file_size);
+    VIR_DEBUG("Sent filesize.");
+    VIR_DEBUG("Sending file...");
+    ssize_t sent_data = 0;
+    ssize_t bytes_sent = 0;
     while (sent_data < file_size) {
+        if((bytes_sent = sendfile(sock, file, NULL, file_size - sent_data)) <= 0) {
+            if (errno == EINTR || errno == EAGAIN)
+                continue;
+            VIR_DEBUG("Error sending file.");
+            return -1;
+        }
+        sent_data += bytes_sent;
         VIR_DEBUG("sent %ld / %lu bytes", sent_data, file_size);
-        sent_data += sendfile(sock, file, NULL, file_size - sent_data);
     }
-    VIR_DEBUG("sent %ld / %lu bytes", sent_data, file_size);
- /*   if (sent_data != file_size) {
-        VIR_DEBUG("not everthing sent: return %ld expected %lu\n", sent_data, file_size);
-        VIR_DEBUG("errno: %s", strerror(errno));
-        return -1;
-    }*/
     return sent_data;
 }
 
