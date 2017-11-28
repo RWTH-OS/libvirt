@@ -118,7 +118,7 @@ static ssize_t walkdir_send_file(int sock, int file, size_t file_size)
     ssize_t sent_data = 0;
     ssize_t bytes_sent = 0;
     while (sent_data < file_size) {
-        if((bytes_sent = sendfile(sock, file, NULL, file_size - sent_data)) <= 0) {
+        if ((bytes_sent = sendfile(sock, file, NULL, file_size - sent_data)) <= 0) {
             if (errno == EINTR || errno == EAGAIN)
                 continue;
             VIR_DEBUG("Error sending file.");

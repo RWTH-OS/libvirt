@@ -390,7 +390,7 @@ statustype_t server_receive_status_noblock(int socket)
     ssize_t recvlen;
 
     if ((recvlen = recv(socket, &status, sizeof(status), MSG_DONTWAIT)) < 0) {
-        if(errno == EAGAIN)
+        if (errno == EAGAIN)
             return STATUS_AGAIN;
         VIR_DEBUG("error while recv'ing");
         return STATUS_ERR; 

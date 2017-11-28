@@ -40,12 +40,12 @@ struct lxctools_migrate_data {
     pthread_t *server_thread;
 };
 
-bool startCopyProc(const char* pageserver_address, const char* pageserver_port, const char* nc_port, const char* image_path, struct lxc_container* cont, bool live);
+int startCopyProc(const char* pageserver_address, const char* pageserver_port, const char* nc_port, const char* image_path, struct lxc_container* cont, bool live);
 
-bool startCopyServer(struct lxctools_migrate_data* md, const char* criu_port, const char* copy_port, const char* path, bool live);
+int startCopyServer(struct lxctools_migrate_data* md, const char* criu_port, const char* copy_port, const char* path, bool live);
 
 int waitForMigrationProcs(struct lxctools_migrate_data* md);
-bool createTmpfs(const char* path);
+int createTmpfs(const char* path);
 
 int restoreContainer(struct lxc_container *cont, bool live, int migration_iterations);
 
