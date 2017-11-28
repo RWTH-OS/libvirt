@@ -212,19 +212,19 @@ lxctoolsDomainRestoreFlags(virConnectPtr conn, const char* from,
         goto cleanup;
     }
 
-    if(!cont->may_control(cont)) {
+    if (!cont->may_control(cont)) {
         virReportError(VIR_ERR_OPERATION_DENIED, "%s",
                        _("domain may not be controlled"));
         goto cleanup;
     }
 
-    if(!criuExists()) {
+    if (!criuExists()) {
         virReportError(VIR_ERR_OPERATION_DENIED, "%s",
                        _("criu binary not found in PATH"));
         goto cleanup;
     }
 
-    if(!cont->restore(cont, (char*)from, false)) {
+    if (!cont->restore(cont, (char*)from, false)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("lxc api call failed. check lxc log for more information"));
             goto cleanup;
@@ -260,7 +260,7 @@ lxctoolsDomainSaveFlags(virDomainPtr domain, const char* to,
 
     vm = virDomainObjListFindByUUID(driver->domains, domain->uuid);
 
-    if(!vm) {
+    if (!vm) {
         virReportError(VIR_ERR_NO_DOMAIN,
                         _("no domain with name '%s'"), domain->name);
         goto cleanup;
@@ -317,12 +317,12 @@ lxctoolsDomainSaveFlags(virDomainPtr domain, const char* to,
     }
 
     if (flags & VIR_DOMAIN_SAVE_RUNNING) {
-        if(!cont->checkpoint(cont, save_path, false, false))
+        if (!cont->checkpoint(cont, save_path, false, false))
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("lxc api call failed. check lxc log for more information"));
             goto cleanup;
     } else {
-        if(!cont->checkpoint(cont, save_path, true, false)) {
+        if (!cont->checkpoint(cont, save_path, true, false)) {
             virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                            _("lxc api call failed. check lxc log for more information"));
             goto cleanup;
@@ -358,7 +358,7 @@ lxctoolsDomainShutdownFlags(virDomainPtr dom, unsigned int flags)
 
     vm = virDomainObjListFindByName(driver->domains, dom->name);
 
-    if(!vm) {
+    if (!vm) {
         virReportError(VIR_ERR_NO_DOMAIN,
                         _("no domain with name '%s'"), dom->name);
         goto cleanup;
@@ -415,7 +415,7 @@ lxctoolsDomainCreateWithFlags(virDomainPtr dom, unsigned int flags)
     virCheckFlags(0, -1);
     vm = virDomainObjListFindByName(driver->domains, dom->name);
 
-    if(!vm) {
+    if (!vm) {
         virReportError(VIR_ERR_NO_DOMAIN,
                         _("no domain with name '%s'"), dom->name);
         goto cleanup;
@@ -616,7 +616,7 @@ lxctoolsDomainGetInfo(virDomainPtr dom, virDomainInfoPtr info)
     }
     ret = 0;
  cleanup:
-    if(vm)
+    if (vm)
         virObjectUnlock(vm);
     VIR_FREE(config_item);
     return ret;
@@ -639,7 +639,7 @@ static virDomainPtr lxctoolsDomainLookupByID(virConnectPtr conn,
             dom->id = obj->def->id;
     }
 
-    if(obj)
+    if (obj)
         virObjectUnlock(obj);
     return dom;
 }
@@ -661,7 +661,7 @@ static virDomainPtr lxctoolsDomainLookupByName(virConnectPtr conn,
             dom->id = obj->def->id;
     }
 
-    if(obj)
+    if (obj)
         virObjectUnlock(obj);
     return dom;
 }
@@ -727,7 +727,7 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
     char* lxcpath = NULL;
     virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
 
-    if(conn->uri == NULL) {
+    if (conn->uri == NULL) {
        if (VIR_STRDUP(lxcpath, lxc_get_global_config_item("lxc.lxcpath")) < 0) {
            return VIR_DRV_OPEN_DECLINED;
        }
@@ -741,12 +741,12 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
            return VIR_DRV_OPEN_DECLINED;
        }
 
-       if(!(conn->uri = virURIParse("lxctools:///"))) {
+       if (!(conn->uri = virURIParse("lxctools:///"))) {
            goto cleanup;
        }
     } else {
        /* Is schme for 'lxctools'? */
-       if(conn->uri->scheme == NULL ||
+       if (conn->uri->scheme == NULL ||
           STRNEQ(conn->uri->scheme, "lxctools"))
           return VIR_DRV_OPEN_DECLINED;
 
@@ -869,7 +869,7 @@ static unsigned long long
 lxctoolsNodeGetFreeMemory(virConnectPtr conn ATTRIBUTE_UNUSED)
 {
     unsigned long long freeMem;
-    if(virHostMemGetInfo(NULL, &freeMem) < 00)
+    if (virHostMemGetInfo(NULL, &freeMem) < 00)
         return 0;
     return freeMem;
 }
@@ -969,6 +969,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
                                     char **uri_out,
                                     unsigned int flags)
 {
+    VIR_DEBUG("Preparing...");
     struct lxctools_driver *driver = dconn->privateData;
     virDomainObjPtr vm = NULL;
     const char* dname = NULL;
@@ -1055,6 +1056,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
      * TODO: - mkdir if  tmpfs path does not exist
      *       - handle already mounted tmpfs (probably needs no handling, remount may be a good thing (does this happen?))
      */
+    VIR_DEBUG("Start criu page-server...");
     if ((tmpfs_path = concatPaths(cont->get_config_path(cont),
                                   "migrate_tmpfs")) == NULL)
         goto cleanup;
@@ -1064,7 +1066,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
                 goto cleanup;
     }
 
-    if (!createTmpfs(tmpfs_path)) {
+    if (createTmpfs(tmpfs_path) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("could not create tmpfs at '%s'"),
                        tmpfs_path);
@@ -1072,8 +1074,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
     }
     if (VIR_ALLOC(driver->md) < 0)
         goto cleanup;
-    if (!startCopyServer(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
-                         tmpfs_path, live_migration)) {
+    if (startCopyServer(driver->md, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT, tmpfs_path, live_migration) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("error while starting migrations servers"));
         goto cleanup;
@@ -1084,7 +1085,7 @@ lxctoolsDomainMigratePrepare3Params(virConnectPtr dconn,
     ret = 0;
  cleanup:
     VIR_FREE(my_hostname);
-    if(vm)
+    if (vm)
         virObjectUnlock(vm);
 
     //free(tmpfs_path);
@@ -1168,7 +1169,7 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
         if (mkdir(tmpfs_path, S_IRUSR | S_IRGRP | S_IWUSR) < 0)
                 goto cleanup;
     }
-    if (!createTmpfs(tmpfs_path)) {
+    if (createTmpfs(tmpfs_path) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("could not create tmpfs at '%s'"),
                        tmpfs_path);
@@ -1178,8 +1179,7 @@ lxctoolsDomainMigratePerform3Params(virDomainPtr domain,
 #ifdef LXCTOOLS_EVALUATION
 timelog("setup");
 #endif
-    if (!startCopyProc(uri_in, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT,
-        tmpfs_path, cont,  live_migration)) {
+    if (startCopyProc(uri_in, LXCTOOLS_CRIU_PORT, LXCTOOLS_COPY_PORT, tmpfs_path, cont, live_migration) < 0) {
         VIR_DEBUG("could not start copy processes");
         goto cleanup;
     }
@@ -1208,7 +1208,7 @@ timelog("setup");
 timelog("complete-dump");
 #endif
 cleanup:
-    if(vm)
+    if (vm)
         virObjectUnlock(vm);
 
     //VIR_FREE(tmpfs_path);
@@ -1289,6 +1289,7 @@ VIR_DEBUG("start finish");
 
         goto cleanup;
     }
+    VIR_DEBUG("Wait for migration process to exit.");
     if ((migration_iterations = waitForMigrationProcs(driver->md)) < 0) {
         virReportError(VIR_ERR_OPERATION_FAILED, "%s",
                        _("error while waiting on migration process to exit."));
@@ -1304,13 +1305,16 @@ VIR_DEBUG("start finish");
         goto cleanup;
     }
 
-    if(!criuExists()) {
+    if (!criuExists()) {
         virReportError(VIR_ERR_OPERATION_DENIED, "%s",
                        _("criu binary not found in PATH"));
         goto cleanup;
     }
     VIR_DEBUG("about to restore");
-    restoreContainer(cont, live_migration, migration_iterations);
+    if (restoreContainer(cont, live_migration, migration_iterations) < 0) {
+        VIR_ERROR("Restore container failed.");
+        goto cleanup;
+    }
     VIR_DEBUG("restored");
     if (!cont->is_running(cont)) {
         virReportError(VIR_ERR_OPERATION_FAILED,
@@ -1332,7 +1336,7 @@ VIR_DEBUG("start finish");
   //                     _("failed to umount tmpfs: %s"), strerror(errno));
 
     VIR_FREE(tmpfs_path);
-    if(vm)
+    if (vm)
         virObjectUnlock(vm);
     return ret;
 }
@@ -1395,7 +1399,10 @@ timelog("restore");
                        _("migration failed, restart container '%s'"), domain->name);
 
         if (!cont->is_running(cont)) {
-            restoreContainer(cont, live_migration, 1);
+            if (restoreContainer(cont, live_migration, 1) < 0) {
+                VIR_ERROR("Restore container failed.");
+                goto cleanup;
+            }
         }
 
         if (!cont->is_running(cont)) {
@@ -1435,7 +1442,7 @@ timelog("end");
 #endif
 
     VIR_FREE(tmpfs_path);
-    if(vm)
+    if (vm)
         virObjectUnlock(vm);
     return ret;
 }

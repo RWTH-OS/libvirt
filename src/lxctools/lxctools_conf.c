@@ -172,7 +172,7 @@ virDomainState lxcState2virState(const char* state)
 
 void lxctoolsFreeDriver(struct lxctools_driver* driver)
 {
-    if(!driver)
+    if (!driver)
         return;
     free((void*)driver->path);
     virObjectUnref(driver->domains);
@@ -181,7 +181,7 @@ void lxctoolsFreeDriver(struct lxctools_driver* driver)
 
 static void container_cleaner(void* ptr) {
     struct lxc_container* cont;
-    if(ptr) {
+    if (ptr) {
         cont = ptr;
         VIR_FREE(cont);
     }
@@ -281,7 +281,7 @@ unsigned short countVCPUs(const char* cpustring)
     int i = 0;
     unsigned short cnt = 1;
     while (cpustring[i] != '\0') {
-        if(cpustring[i++] == ',') {
+        if (cpustring[i++] == ',') {
             cnt++;
         }
     }
