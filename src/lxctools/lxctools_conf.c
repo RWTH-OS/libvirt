@@ -529,37 +529,53 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
     size_t tokencnt;
     char** splitlist = NULL;
 
-    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs")) == NULL) {
-        goto error;
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs.path")) == NULL) {
+        VIR_WARN("Could not find key lxc.rootfs.path. Trying legacy key lxc.rootfs.");
+        if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs")) == NULL) {
+            VIR_ERROR("Could not find key lxc.rootfs");
+            goto error;
+        }
     }
     if (item_str[0] == '\0') {
-        VIR_ERROR("Domain has no rootfs config-item");
+        VIR_ERROR("Domain has no rootfs config-item.");
         goto error;
     }
     if (VIR_ALLOC(fs) < 0) {
+        VIR_ERROR("Could not allocate for virDomainFSDefPtr fs.");
         goto error;
     }
 
     fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
     splitlist = virStringSplitCount(item_str, ":", 3, &tokencnt);
     
-    if (tokencnt == 1) { //Type is PATH
+    if (tokencnt == 1) { // Simple path
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        fs->src = item_str;
-        virStringFreeList(splitlist);
+        if (VIR_STRDUP(fs->src, item_str) != 1) {
+            VIR_ERROR("Could not duplicate string.");
+            goto error;
+        }
+    } else if (tokencnt == 3 && strcmp(splitlist[0], "overlayfs") == 0) { // overlayfs
+        fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
+        if (VIR_STRDUP(fs->src, item_str) != 1) {
+            VIR_ERROR("Could not duplicate string.");
+            goto error;
+        }
     } else {
         VIR_ERROR("Domain rootfs type is currently not supported");
         goto error;
     }
-    if (VIR_STRDUP(fs->dst, "/") != 1)
-        goto error;
-
- 
-    if (virDomainFSInsert(def, fs) < 0) {
+    if (VIR_STRDUP(fs->dst, "/") != 1) {
+        VIR_ERROR("Could not duplicate string.");
         goto error;
     }
-    item_str = NULL;
+    if (virDomainFSInsert(def, fs) < 0) {
+        VIR_ERROR("Could not insert filesystem desc into domain.");
+        goto error;
+    }
+    virStringFreeList(splitlist);
     splitlist = NULL;
+    VIR_FREE(item_str);
+    VIR_FREE(fs);
 
     if ((splitlist = lxctoolsConffileGetItemlist(conffile, "lxc.mount.entry", &tokencnt)) == NULL) {
         goto error;
@@ -574,40 +590,41 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
                 goto error;
             }
             if (VIR_ALLOC(fs) < 0) {
+                VIR_ERROR("Could not allocate for virDomainFSDefPtr fs.");
                 goto error;
             }
             if (strcmp(params[2], "none") == 0 && strstr(params[3],"bind") != NULL) {
                 fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
                 fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
                 if (VIR_STRDUP(fs->src, params[0]) < 0) {
+                    VIR_ERROR("Could not copy src string.");
                     goto error;
                 }
                 if (virAsprintf(&fs->dst, "/%s", params[1]) < 0) {
+                    VIR_ERROR("Could not copy dst string.");
                     goto error;
                 }
                 if (strstr(params[3], "ro") != NULL) {
                     fs->readonly = true;
                 }
                 if (virDomainFSInsert(def, fs) < 0) {
+                    VIR_ERROR("Could not insert filesystem desc into domain.");
                     goto error;
                 }
             }
-
+            VIR_FREE(fs);
             virStringFreeList(params);
-
         }
         virStringFreeList(splitlist);
         splitlist = NULL;
     }
-
-    VIR_FREE(item_str);
-
-
     return 0;
+
 error:
     virStringFreeList(splitlist);
-    VIR_FREE(fs);
+    splitlist = NULL;
     VIR_FREE(item_str);
+    VIR_FREE(fs);
     return -1;
 }
 
