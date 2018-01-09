@@ -526,14 +526,14 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
 
     virDomainFSDefPtr fs = NULL;
     char* item_str = NULL;
-    size_t splitcnt;
+    size_t tokencnt;
     char** splitlist = NULL;
 
     if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs")) == NULL) {
         goto error;
     }
     if (item_str[0] == '\0') {
-        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", "Domain has no rootfs config-item");
+        VIR_ERROR("Domain has no rootfs config-item");
         goto error;
     }
     if (VIR_ALLOC(fs) < 0) {
@@ -541,14 +541,14 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
     }
 
     fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
-    splitlist = virStringSplitCount(item_str, ":", 3, &splitcnt);
+    splitlist = virStringSplitCount(item_str, ":", 3, &tokencnt);
     
-    if (splitcnt == 1) { //Type is PATH
+    if (tokencnt == 1) { //Type is PATH
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
         fs->src = item_str;
         virStringFreeList(splitlist);
     } else {
-        virReportError(VIR_ERR_OPERATION_FAILED, "'%s'", "Domain rootfs type is currently not supported");
+        VIR_ERROR("Domain rootfs type is currently not supported");
         goto error;
     }
     if (VIR_STRDUP(fs->dst, "/") != 1)
@@ -561,16 +561,16 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
     item_str = NULL;
     splitlist = NULL;
 
-    if ((splitlist = lxctoolsConffileGetItemlist(conffile, "lxc.mount.entry", &splitcnt)) == NULL) {
+    if ((splitlist = lxctoolsConffileGetItemlist(conffile, "lxc.mount.entry", &tokencnt)) == NULL) {
         goto error;
     }
     if (splitlist[0] != NULL) {
         size_t param_cnt;
         char** params;
-        while (splitcnt-- > 0) {
-            params = virStringSplitCount(splitlist[splitcnt], " ", 6, &param_cnt);
+        while (tokencnt-- > 0) {
+            params = virStringSplitCount(splitlist[tokencnt], " ", 6, &param_cnt);
             if (param_cnt != 6) {
-                virReportError(VIR_ERR_OPERATION_FAILED, "The following entry has to few parameters: '%s'", splitlist[splitcnt]);
+                VIR_ERROR("The following entry has to few parameters: '%s'", splitlist[tokencnt]);
                 goto error;
             }
             if (VIR_ALLOC(fs) < 0) {
