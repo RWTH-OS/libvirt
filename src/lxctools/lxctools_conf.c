@@ -485,14 +485,14 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
         }
         
         if (strcmp(def->fss[i]->dst, "/") == 0) {
-            if (lxctoolsConffileSetItem(conffile, "lxc.rootfs", def->fss[i]->src) < 0) {
-                virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("could not set rootfs"));
+            if (lxctoolsConffileSetItem(conffile, "lxc.rootfs.path", def->fss[i]->src) < 0) {
+                VIR_ERROR("could not set rootfs");
                 goto cleanup;
             }
             rootfs_set = true;
         } else {
             if (def->fss[i]->dst[0] != '/') {
-                virReportError(VIR_ERR_OPERATION_FAILED, "Destination '%s' does not contain a leading '/'", def->fss[i]->dst);
+                VIR_ERROR("Destination '%s' does not contain a leading '/'", def->fss[i]->dst);
                 goto cleanup;
             }
             
@@ -504,7 +504,6 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
             if (lxctoolsConffileAddItem(conffile, "lxc.mount.entry", item_buf) < 0)
                 goto cleanup;
             VIR_FREE(item_buf);
-            item_buf = NULL;
         }
     }
 
@@ -554,6 +553,12 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
             VIR_ERROR("Could not duplicate string.");
             goto error;
         }
+    } else if (tokencnt == 2 && strcmp(splitlist[0], "dir") == 0) { // dir
+        fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
+        if (VIR_STRDUP(fs->src, item_str) != 1) {
+            VIR_ERROR("Could not duplicate string.");
+            goto error;
+        }
     } else if (tokencnt == 3 && strcmp(splitlist[0], "overlayfs") == 0) { // overlayfs
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
         if (VIR_STRDUP(fs->src, item_str) != 1) {
@@ -572,10 +577,10 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
         VIR_ERROR("Could not insert filesystem desc into domain.");
         goto error;
     }
+    fs = NULL;
+    VIR_FREE(item_str);
     virStringFreeList(splitlist);
     splitlist = NULL;
-    VIR_FREE(item_str);
-    VIR_FREE(fs);
 
     if ((splitlist = lxctoolsConffileGetItemlist(conffile, "lxc.mount.entry", &tokencnt)) == NULL) {
         goto error;
@@ -611,6 +616,7 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
                     VIR_ERROR("Could not insert filesystem desc into domain.");
                     goto error;
                 }
+                fs = NULL;
             }
             VIR_FREE(fs);
             virStringFreeList(params);
