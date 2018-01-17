@@ -372,8 +372,15 @@ lxctoolsDomainShutdownFlags(virDomainPtr dom, unsigned int flags)
         goto cleanup;
     }
 
-    if (!cont->stop(cont)) {
-        goto cleanup;
+    ret = cont->shutdown(cont, 60);
+    if (!ret) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                        _("could not shutdown '%s' gracefully. Trying hardstop"), dom->name);
+	if (!cont->stop(cont)) {
+		virReportError(VIR_ERR_OPERATION_FAILED,
+			       _("could not hardstop '%s'"), dom->name);
+		goto cleanup;
+	}
     }
 
     vm->def->id = -1;
@@ -1410,7 +1417,7 @@ timelog("restore");
                            _("container '%s' did not restore on api call"),
                            domain->name);
             goto cleanup;
-        } 
+        }
         virDomainObjSetState(vm, VIR_DOMAIN_RUNNING, VIR_DOMAIN_RUNNING_MIGRATION_CANCELED);
     } else if (cont->is_running(cont)) {
         if (!cont->stop(cont)) {
