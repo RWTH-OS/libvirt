@@ -294,6 +294,31 @@ lxctoolsConffileAddItem(lxctoolsConffilePtr conffile,
     return lxctoolsConffileAppend(conffile, it);
 }
 
+/**
+ * There has to be one '%zu' in key to insert index into.
+ */
+int
+lxctoolsConffileAddItemEnumerated(lxctoolsConffilePtr conffile,
+                        const char* key,
+                        const char* value,
+                        size_t index)
+{
+    lxctoolsConffileEntryPtr it;
+    char *modified_key = NULL;
+    if (conffile == NULL || key == NULL || value == NULL)
+        return -1;
+    //create new entry
+    if (VIR_ALLOC(it) < 0)
+        return -1;
+    if (virAsprintf(&modified_key, key, index) < 0) {
+        VIR_ERROR("Failed inserting index into key.");
+        return -1;
+    }
+    if (virAsprintf(&it->line, "%s = %s\n", modified_key, value) < 0)
+        return -1;
+    return lxctoolsConffileAppend(conffile, it);
+}
+
 int
 lxctoolsConffileAddComment(lxctoolsConffilePtr conffile,
                            const char* comment)

@@ -54,14 +54,11 @@ int lxctoolsConffileSetItem(lxctoolsConffilePtr conffile, const char* key, const
 
 int lxctoolsConffileGetUUID(lxctoolsConffilePtr conffile, char* uuid_store);
 int lxctoolsConffileAddUUID(lxctoolsConffilePtr conffile, unsigned char* uuid);
-char **lxctoolsConffileGetItemlist(lxctoolsConffilePtr conffile,
-                                   const char* key,
-                                   size_t* tokcount);
-int lxctoolsConffileRemoveItems(lxctoolsConffilePtr,
-                                const char* key);
-int lxctoolsConffileAddItem(lxctoolsConffilePtr conffile,
-                            const char* key,
-                            const char* value);
+char **lxctoolsConffileGetItemlist(lxctoolsConffilePtr conffile, const char* key, size_t* tokcount);
+int lxctoolsConffileRemoveItems(lxctoolsConffilePtr, const char* key);
+int lxctoolsConffileAddItem(lxctoolsConffilePtr conffile, const char* key, const char* value);
+// There has to be one '%zu' in key to insert index into.
+int lxctoolsConffileAddItemEnumerated(lxctoolsConffilePtr conffile, const char* key, const char* value, size_t index);
 
 /* line does not need to include "#", comment string is copied */
 int lxctoolsConffileAddComment(lxctoolsConffilePtr conffile,

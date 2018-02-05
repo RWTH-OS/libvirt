@@ -752,7 +752,7 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
            goto cleanup;
        }
     } else {
-       /* Is schme for 'lxctools'? */
+       /* Is scheme for 'lxctools'? */
        if (conn->uri->scheme == NULL ||
           STRNEQ(conn->uri->scheme, "lxctools"))
           return VIR_DRV_OPEN_DECLINED;
@@ -817,8 +817,9 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
     }
 
     if (lxctoolsLoadDomains(driver) < 0) {
-       virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                      _("error while loading domains"));
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                      _("cannot load domains: %s"),
+                      virGetLastErrorMessage());
 
        goto cleanup;
     }

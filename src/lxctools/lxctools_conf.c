@@ -248,32 +248,52 @@ cleanup:
 /*
  * str is callee allocated
  */
-int lxctoolsReadConfigItem(struct lxc_container* cont, const char* item, char** str)
+int lxctoolsReadConfigItem(struct lxc_container* cont, const char* key, char** str)
 {
     int ret_len;
-    if (VIR_ALLOC_N(*str, 64) < 0)
+    if ((ret_len = cont->get_config_item(cont, key, NULL, 0)) < 0)
         goto error;
-    if (( ret_len = cont->get_config_item(cont,
-                                         item,
-                                         *str,
-                                         64) ) < 0){
-       goto error;
-    }
-    if (ret_len >= 64) {
-        if (VIR_ALLOC_N(*str, ret_len) < 0)
-            goto error;
-        if (( ret_len = cont->get_config_item(cont,
-                                             item,
-                                             *str,
-                                             ret_len) ) < 0){
-             goto error;
-        }
-    }
-    return 0;      
- error: 
-     virReportError(VIR_ERR_OPERATION_FAILED, "error on reading config for container: '%s'", cont->error_string);
+    if (VIR_ALLOC_N(*str, ret_len+1) < 0)
+        goto error;
+    if ((cont->get_config_item(cont, key, *str, ret_len+1)) < 0)
+        goto error;
+    return 0;
+ error:
+     VIR_ERROR("Error on reading config for container: '%s'", cont->error_string);
      *str = NULL;
      return -1;
+}
+
+/*
+ * subkeys is callee allocated
+ */
+int lxctoolsGetKeys(struct lxc_container* cont, const char *key, char **subkeys)
+{
+    int len = -1;
+    int ret = -1;
+
+    VIR_DEBUG("get_keys of '%s' ...", key);
+    len = cont->get_keys(cont, key, NULL, 0);
+    if (len < 0) {
+        VIR_DEBUG("Failed getting length of all keys.");
+        goto cleanup;
+    }
+    if (subkeys == NULL) {
+        ret = len;
+        goto cleanup;
+    }
+    if (VIR_ALLOC_N(*subkeys, len+1) < 0) {
+        VIR_DEBUG("Could not allocate string for subkeys.");
+        goto cleanup;
+    }
+    ret = cont->get_keys(cont, key, *subkeys, len+1);
+    if (ret != len) {
+        VIR_DEBUG("Failed getting  all keys.");
+        goto cleanup;
+    }
+    VIR_DEBUG("All keys for '%s': \n%s", key, *subkeys);
+cleanup:
+    return ret;
 }
 
 unsigned short countVCPUs(const char* cpustring)
@@ -311,45 +331,45 @@ static unsigned long long memToULL(char* memory_str)
      return ret;
 }
 
+/*
+ * Output only lxc.net.x
+ */
 int lxctoolsSetNetConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
 {
     int ret = -1;
     char *mac_str = NULL;
  
+    // Remove old net config
+    if (lxctoolsConffileRemoveItems(conffile, "lxc.net.") < 0)
+        goto cleanup;
     if (lxctoolsConffileRemoveItems(conffile, "lxc.network.") < 0)
         goto cleanup;
 
+    // Insert new net config
     if (lxctoolsConffileAddComment(conffile, "begin: generated network configuration") < 0)
         goto cleanup;
-
     for (size_t i = 0; i != def->nnets; i++) {
         if (def->nets[i]->type != VIR_DOMAIN_NET_TYPE_BRIDGE) {
-            virReportError(VIR_ERR_NO_SUPPORT, "%s", _("only network type bridge is currently supported."));
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, _("only network type bridge is currently supported."));
             goto cleanup;
         }
-
-        if (lxctoolsConffileAddItem(conffile, "lxc.network.type", "veth") < 0) {
-            virReportError(VIR_ERR_OPERATION_FAILED, "%s", _("failed to set lxc.network.type to veth"));
+        if (lxctoolsConffileAddItemEnumerated(conffile, "lxc.net.%zu.type", "veth", i) < 0) {
+            VIR_ERROR("Failed to set lxc.net.%zu.type to veth", i);
             goto cleanup;
         }
-
         if (VIR_ALLOC_N(mac_str, VIR_MAC_STRING_BUFLEN) < 0)
             goto cleanup;
-        
-        if (lxctoolsConffileAddItem(conffile, 
-                                    "lxc.network.hwaddr", 
-                                    virMacAddrFormat(&def->nets[i]->mac, mac_str)) < 0) {
-            virReportError(VIR_ERR_OPERATION_FAILED, "%s", "failed to set lxc.network.hwaddr");
+        virMacAddrFormat(&def->nets[i]->mac, mac_str);
+        if (lxctoolsConffileAddItemEnumerated(conffile, "lxc.net.%zu.hwaddr", mac_str, i) < 0) {
+            VIR_ERROR("Failed to set lxc.net.%zu.hwaddr", i);
             goto cleanup;
         }
-
-        if (lxctoolsConffileAddItem(conffile, "lxc.network.link", def->nets[i]->data.bridge.brname) < 0) {
-            virReportError(VIR_ERR_OPERATION_FAILED, "%s", "failed to set lxc.network.link");
+        if (lxctoolsConffileAddItemEnumerated(conffile, "lxc.net.%zu.link", def->nets[i]->data.bridge.brname, i) < 0) {
+            VIR_ERROR("failed to set lxc.net.%zu.link", i);
             goto cleanup;
         }
-
         if (def->nets[i]->linkstate == VIR_DOMAIN_NET_INTERFACE_LINK_STATE_UP) {
-            if (lxctoolsConffileAddItem(conffile, "lxc.network.flags", "up") < 0)
+            if (lxctoolsConffileAddItemEnumerated(conffile, "lxc.net.%zu.flags", "up", i) < 0)
                 goto cleanup;
         }
     }
@@ -361,6 +381,11 @@ int lxctoolsSetNetConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
     return ret;
 }
 
+/*
+ * - lxc.net.x or lxc.network.x?
+ * - lxc.net or lxc.network?
+ *   TODO: legacy keys
+ */
 static int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def)
 {
     virDomainNetDefPtr net = NULL;
@@ -370,13 +395,120 @@ static int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def
     char** net_types = NULL;
     char* config_str = NULL;
 
-    if (lxctoolsReadConfigItem(cont, "lxc.network", &item_str) < 0) {
+    for (int i = 0;; ++i) {
+        char *key = NULL;
+        // Check if net dev with index i exists.
+        VIR_DEBUG("Checking for net dev %d.", i);
+        if (virAsprintf(&key, "lxc.net.%d", i) < 0) {
+            VIR_DEBUG("Failed to print key in string.");
+            goto cleanup;
+        }
+        if (lxctoolsGetKeys(cont, key, NULL) < 0) {
+            break;
+        }
+        // Allocate network definition structure
+        if (VIR_ALLOC(net) < 0) {
+            VIR_DEBUG("Failed to alloc virDomainNetDef.");
+            goto cleanup;
+        }
+        // Check network type
+        if (virAsprintf(&config_str, "%s.type", key) < 0) {
+            goto cleanup;
+        }
+        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
+            goto cleanup;
+        }
+        VIR_FREE(config_str);
+        config_str=NULL;
+        if (item_str != NULL) {
+            VIR_DEBUG("%s", item_str);
+            if (strcmp(item_str, "veth") == 0) {
+                net->type = VIR_DOMAIN_NET_TYPE_BRIDGE;
+            } else {
+                VIR_DEBUG("Only network type veth is supported.");
+                goto cleanup;
+            }
+        } else {
+            VIR_DEBUG("No type for network device found.");
+            goto cleanup;
+        }
+        VIR_FREE(item_str);
+        item_str=NULL;
+        // Check network hwaddr
+        if (virAsprintf(&config_str, "%s.hwaddr", key) < 0) {
+            goto cleanup;
+        }
+        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
+            goto cleanup;
+        }
+        VIR_FREE(config_str);
+        config_str=NULL;
+        if (item_str != NULL && item_str[0] != '\0') {
+            if (virMacAddrParse(item_str, &net->mac) < 0) {
+                 goto cleanup;
+            }
+        } else {
+            VIR_DEBUG("No hwaddr for network device found.");
+            goto cleanup;
+        }
+        VIR_FREE(item_str);
+        item_str=NULL;
+        // Check for network link
+        if (virAsprintf(&config_str, "%s.link", key) < 0) {
+            goto cleanup;
+        }
+        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
+            goto cleanup;
+        }
+        VIR_FREE(config_str);
+        config_str=NULL;
+        if (item_str != NULL && item_str[0] != '\0') {
+            if (VIR_STRDUP(net->data.bridge.brname, item_str) < 0) {
+                goto cleanup;
+            }
+        }
+        VIR_FREE(item_str);
+        item_str=NULL;
+        // Check for network flags
+        if (virAsprintf(&config_str, "%s.flags", key) < 0) {
+            goto cleanup;
+        }
+        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
+            goto cleanup;
+        }
+        VIR_FREE(config_str);
+        config_str=NULL;
+        if (item_str != NULL && item_str[0] != '\0') {
+            if (strcmp(item_str, "up") == 0) {
+                net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_UP;
+            } else {
+                net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_DOWN;
+            }
+        } else {
+            net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_DOWN;
+        }
+        VIR_FREE(item_str);
+        item_str=NULL;
+        // Insert network definition into domain config.
+        if (virDomainNetInsert(def, net) < 0) {
+            goto cleanup;
+        }
+
+    }
+    ret = 0;
+    goto cleanup;
+
+    VIR_DEBUG("Reading net config...");
+
+    if (lxctoolsReadConfigItem(cont, "lxc.net", &item_str) < 0) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, _("cannot find key lxc.net"));
         goto cleanup;
     }
     if (item_str == NULL || item_str[0] == '\0') {
         ret = 0; //No Network config is ok.
         goto cleanup;
     }
+    VIR_DEBUG("%s", item_str);
     net_types = virStringSplitCount(item_str, "\n", SIZE_MAX, &net_cnt);
     VIR_FREE(item_str);
     net_cnt--; //Last element is always empty
@@ -387,7 +519,7 @@ static int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def
         if (strcmp(net_types[net_cnt], "veth") == 0) {
             net->type = VIR_DOMAIN_NET_TYPE_BRIDGE;
         } else {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "'%s'", "only network type veth is supported");
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, _("only network type veth is supported"));
             goto cleanup;
         }
         if (virAsprintf(&config_str, "lxc.network.%lu.hwaddr", net_cnt) < 0) {
@@ -555,16 +687,20 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
         }
     } else if (tokencnt == 2 && strcmp(splitlist[0], "dir") == 0) { // dir
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        if (VIR_STRDUP(fs->src, item_str) != 1) {
+        if (VIR_STRDUP(fs->src, splitlist[1]) != 1) {
             VIR_ERROR("Could not duplicate string.");
             goto error;
         }
     } else if (tokencnt == 3 && strcmp(splitlist[0], "overlayfs") == 0) { // overlayfs
-        fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        if (VIR_STRDUP(fs->src, item_str) != 1) {
-            VIR_ERROR("Could not duplicate string.");
+        // splitlist[1] -> lowerdir
+        // splitlist[2] -> upperdir
+//        fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_OVERLAYFS;
+//
+//        if (VIR_STRDUP(fs->src, splitlist[1]) != 1) {
+//            VIR_ERROR("Could not duplicate string.");
+            VIR_ERROR("overlayfs is not implemented yet.");
             goto error;
-        }
+//        }
     } else {
         VIR_ERROR("Domain rootfs type is currently not supported");
         goto error;
