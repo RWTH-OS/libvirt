@@ -391,12 +391,13 @@ static int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def
     virDomainNetDefPtr net = NULL;
     char* item_str = NULL;
     int ret = -1;
-    size_t net_cnt;
-    char** net_types = NULL;
     char* config_str = NULL;
+    char *key = NULL;
+
+    VIR_DEBUG("Reading net config...");
+    // TODO: Check if legacy config and throw error
 
     for (int i = 0;; ++i) {
-        char *key = NULL;
         // Check if net dev with index i exists.
         VIR_DEBUG("Checking for net dev %d.", i);
         if (virAsprintf(&key, "lxc.net.%d", i) < 0) {
@@ -496,96 +497,7 @@ static int lxctoolsReadNetConfig(struct lxc_container* cont, virDomainDefPtr def
 
     }
     ret = 0;
-    goto cleanup;
-
-    VIR_DEBUG("Reading net config...");
-
-    if (lxctoolsReadConfigItem(cont, "lxc.net", &item_str) < 0) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, _("cannot find key lxc.net"));
-        goto cleanup;
-    }
-    if (item_str == NULL || item_str[0] == '\0') {
-        ret = 0; //No Network config is ok.
-        goto cleanup;
-    }
-    VIR_DEBUG("%s", item_str);
-    net_types = virStringSplitCount(item_str, "\n", SIZE_MAX, &net_cnt);
-    VIR_FREE(item_str);
-    net_cnt--; //Last element is always empty
-    while (net_cnt-- > 0) {
-        if (VIR_ALLOC(net) < 0) {
-            goto cleanup;
-        }
-        if (strcmp(net_types[net_cnt], "veth") == 0) {
-            net->type = VIR_DOMAIN_NET_TYPE_BRIDGE;
-        } else {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, _("only network type veth is supported"));
-            goto cleanup;
-        }
-        if (virAsprintf(&config_str, "lxc.network.%lu.hwaddr", net_cnt) < 0) {
-            goto cleanup;
-        }
-        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
-            goto cleanup;
-        }
-        if (item_str != NULL && item_str[0] != '\0') {
-            if (virMacAddrParse(item_str, &net->mac) < 0) {
-                 goto cleanup;
-            }
-        } else {
-            goto cleanup;
-        }
-        VIR_FREE(config_str);
-        config_str=NULL;
-        VIR_FREE(item_str);
-        item_str=NULL;
-
-        if (virAsprintf(&config_str, "lxc.network.%lu.link", net_cnt) < 0) {
-            goto cleanup;
-        }
-        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
-            goto cleanup;
-        }
-        if (item_str != NULL && item_str[0] != '\0') {
-            if (VIR_STRDUP(net->data.bridge.brname, item_str) < 0) {
-                goto cleanup;
-            }
-        }
-        VIR_FREE(config_str);
-        config_str=NULL;
-        VIR_FREE(item_str);
-        item_str=NULL;
-
-        if (virAsprintf(&config_str, "lxc.network.%lu.flags", net_cnt) < 0) {
-            goto cleanup;
-        }
-        if (lxctoolsReadConfigItem(cont, config_str, &item_str) < 0) {
-            goto cleanup;
-        }
-        if (item_str != NULL && item_str[0] != '\0') {
-            if (strcmp(item_str, "up") == 0) {
-                net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_UP;
-            } else {
-                net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_DOWN;
-            }
-        } else {
-            net->linkstate = VIR_DOMAIN_NET_INTERFACE_LINK_STATE_DOWN;
-        }
-        VIR_FREE(config_str);
-        config_str=NULL;
-        VIR_FREE(item_str);
-        item_str=NULL;
-
-
-        if (virDomainNetInsert(def, net) < 0) {
-            goto cleanup;
-        }   
-    }
-
-
-    ret = 0;
  cleanup:
-    virStringFreeList(net_types);
     if (ret==-1) VIR_FREE(net);
     VIR_FREE(item_str);
     return ret;   
@@ -679,28 +591,35 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
     fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
     splitlist = virStringSplitCount(item_str, ":", 3, &tokencnt);
     
-    if (tokencnt == 1) { // Simple path
+    // Simple path
+    if (tokencnt == 1) {
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        if (VIR_STRDUP(fs->src, item_str) != 1) {
-            VIR_ERROR("Could not duplicate string.");
+        if (virAsprintf(&fs->src, "dir:%s", splitlist[0]) < 0) {
+            VIR_ERROR("Could not print string in fs->src.");
             goto error;
         }
-    } else if (tokencnt == 2 && strcmp(splitlist[0], "dir") == 0) { // dir
+    // dir
+    } else if (tokencnt == 2 && strcmp(splitlist[0], "dir") == 0) {
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        if (VIR_STRDUP(fs->src, splitlist[1]) != 1) {
-            VIR_ERROR("Could not duplicate string.");
+        if (virAsprintf(&fs->src, "%s:%s", splitlist[0], splitlist[1]) < 0) {
+            VIR_ERROR("Could not print string in fs->src.");
             goto error;
         }
-    } else if (tokencnt == 3 && strcmp(splitlist[0], "overlayfs") == 0) { // overlayfs
-        // splitlist[1] -> lowerdir
-        // splitlist[2] -> upperdir
-//        fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_OVERLAYFS;
-//
-//        if (VIR_STRDUP(fs->src, splitlist[1]) != 1) {
-//            VIR_ERROR("Could not duplicate string.");
-            VIR_ERROR("overlayfs is not implemented yet.");
+    // overlay or overlayfs
+    } else if (tokencnt == 3 && (strcmp(splitlist[0], "overlay") == 0 || strcmp(splitlist[0], "overlayfs") == 0)) {
+        // We could add a new FS type like VIR_DOMAIN_FS_DRIVER_TYPE_OVERLAY, but this requires minor changes in the
+        // libvirt interface and the qemu driver.
+        // Also, we could either save "lowerdir:upperdir" in fs->src or create additional members to hold each seperately
+        // splitlist[0] -> overlayfs/overlay
+        // splitlist[1] -> lowerdir path
+        // splitlist[2] -> upperdir path
+        // For now, this implements overlayfs using VIR_DOMAIN_FS_DRIVER_TYPE_PATH and saving "overlayfs:lowerdir:upperdir"
+        // in fs->src, which does not require lxctools external changes, but is a little bit ugly.
+        fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
+        if (virAsprintf(&fs->src, "%s:%s:%s", splitlist[0], splitlist[1], splitlist[2]) < 0) {
+            VIR_ERROR("Could not print string in fs->src.");
             goto error;
-//        }
+        }
     } else {
         VIR_ERROR("Domain rootfs type is currently not supported");
         goto error;

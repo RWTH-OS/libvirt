@@ -2244,9 +2244,23 @@
           </optional>
           <interleave>
             <element name="source">
-              <attribute name="dir">
-                <ref name="absDirPath"/>
-              </attribute>
+              <!-- This choice supports the lxc format for the source dir. -->
+              <!-- We should consider adding another type like overlay instead of using the mount type. -->
+              <choice>
+                <attribute name="dir">
+                  <ref name="absDirPath"/>
+                </attribute>
+                <attribute name="dir">
+                  <data type="string">
+                    <param name="pattern">dir:/[a-zA-Z0-9_\.\+\-\\&amp;&quot;&apos;&lt;&gt;/%]*</param>
+                  </data>
+                </attribute>
+                <attribute name="dir">
+                  <data type="string">
+                    <param name="pattern">overlay(fs)?(:/[a-zA-Z0-9_\.\+\-\\&amp;&quot;&apos;&lt;&gt;/%]*){2}</param>
+                  </data>
+                </attribute>
+              </choice>
               <empty/>
             </element>
           </interleave>
