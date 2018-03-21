@@ -327,7 +327,7 @@ static int recv_dir(int socket, struct server_data* server_data, int dir_fd)
 int server_receive_files(int socket, const char* dir)
 {
     VIR_DEBUG("Receiving file...");
-    int dir_fd;
+    int dir_fd = -1;
     struct server_data server_data_s;
     struct server_data *server_data = &server_data_s;
     cpytype_t filetype;
@@ -372,6 +372,10 @@ int server_receive_files(int socket, const char* dir)
     VIR_DEBUG("received end token");
     ret = 0;
  err:
+    if (close(dir_fd) < 0) {
+        VIR_DEBUG("failed to close dir: %s", strerror(errno));
+        ret = -1;
+    }
     return ret;
 }
 
