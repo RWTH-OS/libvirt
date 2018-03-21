@@ -895,6 +895,7 @@ lxctoolsNodeGetCPUMap(virConnectPtr conn ATTRIBUTE_UNUSED,
 #include <sys/time.h>
 struct timeval time_start, time_stop, time_diff;
 FILE *time_file;
+/// TODO: fclose /lxctoolseval somewhere
 static void init_time(void)
 {
     gettimeofday(&time_start, NULL);
@@ -1339,10 +1340,8 @@ VIR_DEBUG("start finish");
     else
         ret = NULL;
  cleanup:
-  //  if (umount(tmpfs_path) < 0)
-  //      virReportError(VIR_ERR_OPERATION_FAILED,
-  //                     _("failed to umount tmpfs: %s"), strerror(errno));
-
+    if (umount(tmpfs_path) < 0)
+        VIR_ERROR("failed to umount tmpfs: %s", strerror(errno));
     VIR_FREE(tmpfs_path);
     if (vm)
         virObjectUnlock(vm);
@@ -1441,9 +1440,8 @@ timelog("restore");
 
     ret = 0;
  cleanup:
-  //  if (umount(tmpfs_path) < 0)
-  //      virReportError(VIR_ERR_OPERATION_FAILED,
-  //                     _("failed to umount tmpfs: %s"), strerror(errno));
+    if (umount(tmpfs_path) < 0)
+        VIR_ERROR("failed to umount tmpfs: %s", strerror(errno));
 
 #ifdef LXCTOOLS_EVALUATION
 timelog("end");
