@@ -42,7 +42,6 @@
 #include "virerror.h"
 #include "datatypes.h"
 #include "virbuffer.h"
-#include "nodeinfo.h"
 #include "virhostcpu.h"
 #include "virhostmem.h"
 #include "viralloc.h"
@@ -51,7 +50,6 @@
 #include "virlog.h"
 #include "vircommand.h"
 #include "viruri.h"
-#include "virstats.h"
 #include "virstring.h"
 #include "access/viraccessapicheck.h"
 #include "lxctools_conf.h"
@@ -97,7 +95,8 @@ static int
 lxctoolsDomainDefPostParse(virDomainDefPtr def,
                            virCapsPtr caps ATTRIBUTE_UNUSED,
                            unsigned int parseFlags ATTRIBUTE_UNUSED,
-                           void *opaque ATTRIBUTE_UNUSED)
+                           void *opaque ATTRIBUTE_UNUSED,
+                           void *parseOpaque ATTRIBUTE_UNUSED)
 {
     /* fill the init path */
     if (def->os.type == VIR_DOMAIN_OSTYPE_EXE && !def->os.init) {
@@ -113,7 +112,8 @@ lxctoolsDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
                                 const virDomainDef *def ATTRIBUTE_UNUSED,
                                 virCapsPtr caps ATTRIBUTE_UNUSED,
                                 unsigned int parseFlags ATTRIBUTE_UNUSED,
-                                void *opaque ATTRIBUTE_UNUSED)
+                                void *opaque ATTRIBUTE_UNUSED,
+                                void *parseOpaque ATTRIBUTE_UNUSED)
 {
     /* forbid capabilities mode hostdev in this kind of hypervisor */
     if (dev->type == VIR_DOMAIN_DEVICE_HOSTDEV &&
@@ -641,9 +641,7 @@ static virDomainPtr lxctoolsDomainLookupByID(virConnectPtr conn,
     if (!obj) {
         virReportError(VIR_ERR_NO_DOMAIN, NULL);
     } else {
-        dom = virGetDomain(conn, obj->def->name, obj->def->uuid);
-        if (dom)
-            dom->id = obj->def->id;
+        dom = virGetDomain(conn, obj->def->name, obj->def->uuid, obj->def->id);
     }
 
     if (obj)
@@ -663,9 +661,7 @@ static virDomainPtr lxctoolsDomainLookupByName(virConnectPtr conn,
     if (!obj) {
         virReportError(VIR_ERR_NO_DOMAIN, NULL);
     } else {
-        dom = virGetDomain(conn, obj->def->name, obj->def->uuid);
-        if (dom)
-            dom->id = obj->def->id;
+        dom = virGetDomain(conn, obj->def->name, obj->def->uuid, obj->def->id);
     }
 
     if (obj)
@@ -808,7 +804,7 @@ static virDrvOpenStatus lxctoolsConnectOpen(virConnectPtr conn,
     }
 
     if (!(driver->xmlopt = virDomainXMLOptionNew(&lxctoolsDomainDefParserConfig,
-                                                 NULL, NULL))) {
+                                                 NULL, NULL, NULL, NULL))) {
         goto cleanup;
     }
 
@@ -841,7 +837,7 @@ static int
 lxctoolsNodeGetInfo(virConnectPtr conn ATTRIBUTE_UNUSED,
                                virNodeInfoPtr nodeinfo)
 {
-    return nodeGetInfo(nodeinfo);
+    return virCapabilitiesGetNodeInfo(nodeinfo);
 }
 
 static int
@@ -1334,11 +1330,7 @@ VIR_DEBUG("start finish");
     vm->def->id = cont->init_pid(cont);
     virDomainObjSetState(vm, VIR_DOMAIN_RUNNING, VIR_DOMAIN_RUNNING_MIGRATED);
 
-    ret = virGetDomain(dconn, vm->def->name, vm->def->uuid);
-    if (ret)
-        ret->id = vm->def->id;
-    else
-        ret = NULL;
+    ret = virGetDomain(dconn, vm->def->name, vm->def->uuid, vm->def->id);
  cleanup:
     if (umount(tmpfs_path) < 0)
         VIR_ERROR("failed to umount tmpfs: %s", strerror(errno));
@@ -1471,8 +1463,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
     if (flags & VIR_DOMAIN_DEFINE_VALIDATE)
         parse_flags |= VIR_DOMAIN_DEF_PARSE_VALIDATE_SCHEMA;
 
-    if ((vmdef = virDomainDefParseString(xml, driver->caps, driver->xmlopt,
-                                         parse_flags)) == NULL)
+    if ((vmdef = virDomainDefParseString(xml, driver->caps, driver->xmlopt, NULL, parse_flags)) == NULL)
         goto cleanup;
 
     if (lxctoolsCheckStaticConfig(vmdef) < 0) {
@@ -1548,9 +1539,7 @@ lxctoolsDomainDefineXMLFlags(virConnectPtr conn, const char* xml, unsigned int f
     vmdef = NULL;
     vm->persistent = 1;
 
-    dom = virGetDomain(conn, vm->def->name, vm->def->uuid);
-    if (dom)
-        dom->id = -1;
+    dom = virGetDomain(conn, vm->def->name, vm->def->uuid, -1);
 
  cleanup:
     lxctoolsConffileFree(conffile);

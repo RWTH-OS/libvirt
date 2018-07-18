@@ -37,7 +37,6 @@
 #include "virfile.h"
 #include "lxctools_conf.h"
 #include "virlog.h"
-#include "nodeinfo.h"
 
 
 #define VIR_FROM_THIS VIR_FROM_LXCTOOLS
@@ -53,7 +52,7 @@ virCapsPtr lxctoolsCapabilitiesInit(void)
                                    true, true)) == NULL)
         goto no_memory;
 
-    if (nodeCapsInitNUMA(caps) < 0)
+    if (virCapabilitiesInitNUMA(caps) < 0)
         goto no_memory;
 
     if (virCapabilitiesAddHostMigrateTransport(caps,
@@ -529,7 +528,7 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
         }
         
         if (strcmp(def->fss[i]->dst, "/") == 0) {
-            if (lxctoolsConffileSetItem(conffile, "lxc.rootfs.path", def->fss[i]->src) < 0) {
+            if (lxctoolsConffileSetItem(conffile, "lxc.rootfs.path", def->fss[i]->src->path) < 0) {
                 VIR_ERROR("could not set rootfs");
                 goto cleanup;
             }
@@ -542,7 +541,7 @@ int lxctoolsSetFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr def)
             
             if (virAsprintf(&item_buf,
                             "%s %s none bind,create=dir 0 0",
-                            def->fss[i]->src, def->fss[i]->dst+1) < 0) {
+                            def->fss[i]->src->path, def->fss[i]->dst+1) < 0) {
                 goto cleanup;
             }
             if (lxctoolsConffileAddItem(conffile, "lxc.mount.entry", item_buf) < 0)
@@ -572,7 +571,7 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
     size_t tokencnt;
     char** splitlist = NULL;
 
-    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs.path")) == NULL) {
+    if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs.path")) == NULL || item_str[0] == '\0') {
         VIR_WARN("Could not find key lxc.rootfs.path. Trying legacy key lxc.rootfs.");
         if ((item_str = lxctoolsConffileGetItem(conffile, "lxc.rootfs")) == NULL) {
             VIR_ERROR("Could not find key lxc.rootfs");
@@ -587,22 +586,25 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
         VIR_ERROR("Could not allocate for virDomainFSDefPtr fs.");
         goto error;
     }
-
     fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
+    if (VIR_ALLOC(fs->src) < 0) {
+        VIR_ERROR("Could not allocate for virStorageSourcePtr fs->src.");
+        goto error;
+    }
     splitlist = virStringSplitCount(item_str, ":", 3, &tokencnt);
     
     // Simple path
     if (tokencnt == 1) {
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        if (virAsprintf(&fs->src, "dir:%s", splitlist[0]) < 0) {
-            VIR_ERROR("Could not print string in fs->src.");
+        if (virAsprintf(&fs->src->path, "dir:%s", splitlist[0]) < 0) {
+            VIR_ERROR("Could not print string in fs->src->path.");
             goto error;
         }
     // dir
     } else if (tokencnt == 2 && strcmp(splitlist[0], "dir") == 0) {
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        if (virAsprintf(&fs->src, "%s:%s", splitlist[0], splitlist[1]) < 0) {
-            VIR_ERROR("Could not print string in fs->src.");
+        if (virAsprintf(&fs->src->path, "%s:%s", splitlist[0], splitlist[1]) < 0) {
+            VIR_ERROR("Could not print string in fs->src->path.");
             goto error;
         }
     // overlay or overlayfs
@@ -616,8 +618,8 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
         // For now, this implements overlayfs using VIR_DOMAIN_FS_DRIVER_TYPE_PATH and saving "overlayfs:lowerdir:upperdir"
         // in fs->src, which does not require lxctools external changes, but is a little bit ugly.
         fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-        if (virAsprintf(&fs->src, "%s:%s:%s", splitlist[0], splitlist[1], splitlist[2]) < 0) {
-            VIR_ERROR("Could not print string in fs->src.");
+        if (virAsprintf(&fs->src->path, "%s:%s:%s", splitlist[0], splitlist[1], splitlist[2]) < 0) {
+            VIR_ERROR("Could not print string in fs->src->path.");
             goto error;
         }
     } else {
@@ -634,7 +636,7 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
     }
     fs = NULL;
     VIR_FREE(item_str);
-    virStringFreeList(splitlist);
+    virStringListFree(splitlist);
     splitlist = NULL;
 
     if ((splitlist = lxctoolsConffileGetItemlist(conffile, "lxc.mount.entry", &tokencnt)) == NULL) {
@@ -656,7 +658,11 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
             if (strcmp(params[2], "none") == 0 && strstr(params[3],"bind") != NULL) {
                 fs->type = VIR_DOMAIN_FS_TYPE_MOUNT;
                 fs->fsdriver = VIR_DOMAIN_FS_DRIVER_TYPE_PATH;
-                if (VIR_STRDUP(fs->src, params[0]) < 0) {
+                if (VIR_ALLOC(fs->src) < 0) {
+                    VIR_ERROR("Could not allocate for virStorageSourcePtr fs->src.");
+                    goto error;
+                }
+                if (VIR_STRDUP(fs->src->path, params[0]) < 0) {
                     VIR_ERROR("Could not copy src string.");
                     goto error;
                 }
@@ -674,17 +680,19 @@ static int lxctoolsReadFSConfig(lxctoolsConffilePtr conffile, virDomainDefPtr de
                 fs = NULL;
             }
             VIR_FREE(fs);
-            virStringFreeList(params);
+            virStringListFree(params);
         }
-        virStringFreeList(splitlist);
+        virStringListFree(splitlist);
         splitlist = NULL;
     }
     return 0;
 
 error:
-    virStringFreeList(splitlist);
+    virStringListFree(splitlist);
     splitlist = NULL;
     VIR_FREE(item_str);
+    if (fs)
+        VIR_FREE(fs->src);
     VIR_FREE(fs);
     return -1;
 }
@@ -696,7 +704,7 @@ int lxctoolsCheckStaticConfig(virDomainDefPtr def)
         return -1;
     }
     
-    if (nodeGetInfo(nodeinfo) < 0) {
+    if (virCapabilitiesGetNodeInfo(nodeinfo) < 0) {
         return -1;
     }
 
@@ -872,7 +880,7 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
         goto error;
     }
     
-    if (nodeGetInfo(nodeinfo) < 0) {
+    if (virCapabilitiesGetNodeInfo(nodeinfo) < 0) {
         goto error;
     }
     
@@ -904,7 +912,7 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
         goto error;
     }
     if (item_str[0] == '\0') {
-        if (virDomainDefSetVcpusMax(def, nodeinfo->cpus) < 0)
+        if (virDomainDefSetVcpusMax(def, nodeinfo->cpus, NULL) < 0)
             goto error;
         def->cpumask = virBitmapNew(nodeinfo->cpus);
         virBitmapSetAll(def->cpumask);
@@ -913,7 +921,7 @@ int lxctoolsReadConfig(struct lxc_container* cont, virDomainDefPtr def)
         if ( (cpunum = virBitmapParse(item_str, &def->cpumask, nodeinfo->cpus) ) < 0) {
             goto error;
         }  
-        if (virDomainDefSetVcpusMax(def, cpunum) < 0)
+        if (virDomainDefSetVcpusMax(def, cpunum, NULL) < 0)
             goto error;
     }
 
@@ -1145,7 +1153,7 @@ int lxctoolsLoadDomains(struct lxctools_driver *driver)
         if (def->id != -1)
            flags |= VIR_DOMAIN_OBJ_LIST_ADD_LIVE;
 
-        if (!(xmlopt = virDomainXMLOptionNew(NULL, NULL, NULL)))
+        if (!(xmlopt = virDomainXMLOptionNew(NULL, NULL, NULL, NULL, NULL)))
             goto cleanup;
 
         if (!(dom = virDomainObjListAdd(driver->domains,

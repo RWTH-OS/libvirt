@@ -22,9 +22,9 @@
  */
 
 #ifndef LXCTOOLS_MIGRATION_H
-# define LXCTOOLS_MIGRATION_H
+#define LXCTOOLS_MIGRATION_H
 
-# include "internal.h"
+#include "internal.h"
 #include <pthread.h>
 
 #include "domain_conf.h"
@@ -53,7 +53,7 @@ int restoreContainer(struct lxc_container *cont, bool live, int migration_iterat
 
 #ifdef LXCTOOLS_EVALUATION
 #include <sys/time.h>
-struct timeval post_criudump, post_residualcopy, post_predump;
+extern struct timeval post_criudump, post_residualcopy, post_predump;
 #endif
 
 #endif /* LXCTOOLS_MIGRATION_H */
